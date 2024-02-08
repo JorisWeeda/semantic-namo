@@ -1,0 +1,9 @@
+[submodule "assets/urdf"]
+	path = assets/urdf
+	url = git@github.com:INTERACT-tud-amr/robot-urdfs.git
+    branch = main
+
+[submodule "motion_planning"]
+	path = mppi
+	url = git@github.com:tud-airlab/mppi-isaac.git
+
