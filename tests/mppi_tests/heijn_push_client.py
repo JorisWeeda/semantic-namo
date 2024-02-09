@@ -1,15 +1,15 @@
-from motion_planning.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner
+from motion.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner
 import hydra
 from omegaconf import OmegaConf
 import torch
 import zerorpc
 import pytorch3d.transforms
 
-from motion_planning.mppiisaac.utils.config_store import ExampleConfig
+from motion.mppiisaac.utils.config_store import ExampleConfig
 
 class Objective(object):
     def __init__(self, cfg, device):
-        
+
         # Tuning of the weights for box
         self.w_robot_to_block_pos=  .2
         self.w_block_to_goal_pos=   2.
@@ -18,21 +18,11 @@ class Objective(object):
         self.w_collision=           10
         self.w_vel=                 0.
 
-        # Tuning for Sphere
-        # self.w_robot_to_block_pos=  .2
-        # self.w_block_to_goal_pos=   0.1
-        # self.w_block_to_goal_ort=   0.0
-        # self.w_push_align=          1.
-        # self.w_collision=           0.001
-        # self.w_vel=                 0.
-
         # Task configration for comparison with baselines
         self.ee_index = 4
         self.block_index = 1
-        self.ort_goal_euler = torch.tensor([0, 0, 0], device=cfg.mppi.device)
-
-        self.block_goal_box = torch.tensor([0., 0., 0.5, 0.0, 0.0, 0.0, 1.0], device=cfg.mppi.device)
-        self.block_goal_sphere = torch.tensor([0.42, 1., 0.5, 0, 0, -0.7071068, 0.7071068], device=cfg.mppi.device) # Rotation 90 deg
+        self.ort_goal_euler = torch.tensor([0, 0, 0], device=cfg["mppi"].device)
+        self.block_goal_box = torch.tensor([0., 0., 0.5, 0.0, 0.0, 0.0, 1.0], device=cfg["mppi"].device)
 
         # Select goal according to test
         self.block_goal_pose = torch.clone(self.block_goal_box)
@@ -46,7 +36,6 @@ class Objective(object):
         self.obst_number = 3        # By convention, obstacles are the last actors
 
     def compute_metrics(self, block_pos, block_ort):
-
         block_yaws = torch.atan2(2.0 * (block_ort[:,-1] * block_ort[:,2] + block_ort[:,0] * block_ort[:,1]), block_ort[:,-1] * block_ort[:,-1] + block_ort[:,0] * block_ort[:,0] - block_ort[:,1] * block_ort[:,1] - block_ort[:,2] * block_ort[:,2])
         Ex = torch.abs(self.block_goal_pose[0]-block_pos[-1,0])
         Ey = torch.abs(self.block_goal_pose[1]-block_pos[-1,1])
@@ -99,7 +88,7 @@ def run_heijn_robot(cfg: ExampleConfig):
     # Note: Workaround to trigger the dataclasses __post_init__ method
     cfg = OmegaConf.to_object(cfg)
 
-    objective = Objective(cfg, cfg.mppi.device)
+    objective = Objective(cfg, cfg["mppi"].device)
     prior = None
     planner = zerorpc.Server(MPPIisaacPlanner(cfg, objective, prior))
     planner.bind("tcp://0.0.0.0:4242")

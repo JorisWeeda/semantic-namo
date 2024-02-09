@@ -1,13 +1,13 @@
-from motion_planning.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper
+from motion.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper
 import yaml
 from yaml import SafeLoader
-import motion_planning.mppiisaac as mppiisaac
+import motion.mppiisaac as mppiisaac
 import numpy as np
 import hydra
 from omegaconf import OmegaConf
 import torch
 import zerorpc
-from motion_planning.mppiisaac.utils.config_store import ExampleConfig
+from motion.mppiisaac.utils.config_store import ExampleConfig
 from isaacgym import gymapi
 import time
 from tests.mppi_tests.heijn_push_client import Objective
@@ -44,17 +44,17 @@ def run_heijn_robot(cfg: ExampleConfig):
     cfg = OmegaConf.to_object(cfg)
 
     actors=[]
-    for actor_name in cfg.actors:
+    for actor_name in cfg["actors"]:
         with open(f'{os.path.dirname(mppiisaac.__file__)}/../../config/actors/{actor_name}.yaml') as f:
             actors.append(ActorWrapper(**yaml.load(f, Loader=SafeLoader)))
 
     sim = IsaacGymWrapper(
-        cfg.isaacgym,
-        init_positions=cfg.initial_actor_positions,
+        cfg["isaacgym"],
+        init_positions=cfg["initial_actor_positions"],
         actors=actors,
         num_envs=1,
         viewer=True,
-        device=cfg.mppi.device,
+        device=cfg["mppi"].device,
     )
     
     # Experiment setup
@@ -160,7 +160,7 @@ def run_heijn_robot(cfg: ExampleConfig):
 
     # Helpers
     count = 0
-    client_helper = Objective(cfg, cfg.mppi.device)
+    client_helper = Objective(cfg, cfg["mppi"].device)
     init_time = time.time()
     block_index = 1
     data_time = []
@@ -169,7 +169,7 @@ def run_heijn_robot(cfg: ExampleConfig):
     rt_factor_seq = []
     data_rt = []
 
-    while n_trials < cfg.n_steps:
+    while n_trials < cfg["n_steps"]:
         t = time.time()
         # Reset state
         planner.reset_rollout_sim(
@@ -240,7 +240,7 @@ def run_heijn_robot(cfg: ExampleConfig):
         # rollouts = bytes_to_torch(planner.get_rollouts())
         # sim.draw_lines(rollouts)
         
-        rt_factor_seq.append(cfg.isaacgym.dt/(time.time() - t))
+        rt_factor_seq.append(cfg["isaacgym"].dt/(time.time() - t))
 
     if len(data_time) > 0: 
         print("Num. trials", n_trials)
