@@ -1,5 +1,6 @@
 
 
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,14 +9,28 @@ from itertools import product
 
 from .a_star import a_star
 
-class Planner:
 
-    def __init__(self, gym_handle, env_handle, size, step):
-        self._gym_handle = gym_handle
-        self._env_handle = env_handle
+class Scheduler:
 
-        self.size = size
-        self.step = step
+
+    @staticmethod
+    def tasks(sim, size, step, goal):
+        print(f"sim.root_state: {sim.root_state.shape}")
+        _, amount_of_actors, _ = sim.root_state.shape
+
+        dof_state = sim.dof_state
+        pos = torch.cat((dof_state[:, 0].unsqueeze(1), dof_state[:, 2].unsqueeze(1)), 1)
+
+        print(f'dof_state: {dof_state}')
+
+        rob_pose = sim.root_state[:, 4, :3]
+        
+        print(f'rob_pose: {rob_pose}')
+        for obs_idx in range(1, amount_of_actors):
+            obs_pose = sim.root_state[:, obs_idx, :3]
+            print(f'obs_pose {obs_idx}: {obs_pose}')
+
+
 
     def paths(self, obstacles, robot, q_goal):
 
