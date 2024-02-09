@@ -6,4 +6,5 @@
 [submodule "motion"]
 	path = motion
 	url = git@github.com:tud-airlab/mppi-isaac.git
+    branch = main
 
