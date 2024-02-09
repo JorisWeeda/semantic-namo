@@ -1,0 +1,7 @@
+type: robot
+name: dingo
+urdf_file: "dingo/dingo.urdf"
+gravity: true
+fixed: true
+flip_visual: true
+collision: True
