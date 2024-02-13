@@ -1,5 +1,5 @@
 import math
-
+import numpy as np
 from itertools import product
 
 
@@ -44,6 +44,9 @@ def a_star(maze, init_pos, goal_pos):
                 path.append(current_node.pos)
                 current_node = current_node.par
 
+            path = np.array(path)
+
+            path[:, [0, 1]] = path[:, [1, 0]]
             return path[::-1], explored
 
         for move in product([-1, 0, 1], repeat=2):
@@ -52,8 +55,8 @@ def a_star(maze, init_pos, goal_pos):
             if node_position == current_node.pos:
                 continue
             
-            if (0 <= node_position[0] < len(maze)) and (0 <= node_position[1] < len(maze[0])):
-                if maze[node_position[0]][node_position[1]] == 0:
+            if (0 <= node_position[1] < len(maze)) and (0 <= node_position[0] < len(maze[0])):
+                if maze[node_position[1]][node_position[0]] == 0:  # Adjusted indexing for width and height
                     child_node = Node(current_node, node_position)
 
                     child_node.g = current_node.g + 1
@@ -69,5 +72,3 @@ def a_star(maze, init_pos, goal_pos):
                     frontier.append(child_node)
 
     return None, explored
-
-
