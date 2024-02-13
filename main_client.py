@@ -51,10 +51,10 @@ def client(cfg: ExampleConfig):
     )
 
     # Simulation parameters
-    world_config = "config/worlds/sandbox.yaml"
+    world_config = "config/worlds/blockage.yaml"
     with open(world_config, "r") as stream:
         params = yaml.safe_load(stream)
-        
+
     # Create custom environment of a single simulated environment 
     size = params["environment"]["size"]
     additions =[]
@@ -101,16 +101,16 @@ def client(cfg: ExampleConfig):
 
     # Set objective function and mode for the mobile robot
     goal = torch.tensor([0., 0., 0., 0., 0., 0., 1.], device=cfg["mppi"].device)
-    mode = torch.tensor([0., 0., 0.], device=cfg["mppi"].device)
+    mode = torch.tensor([0., 0.], device=cfg["mppi"].device)
 
     planner.update_objective_goal(torch_to_bytes(goal))
     planner.update_objective_mode(torch_to_bytes(mode))
 
     # Scheduler
     step = params["scheduler"]["step"]
-    goal = params["scheduler"]["step"]
+    goal = params["scheduler"]["goal"]
 
-    scheduler = Scheduler()
+    scheduler = Scheduler(size, step, goal)
 
     # Copy initial state
     initial_state = np.copy(sim.gym.get_sim_rigid_body_states(sim.sim, gymapi.STATE_ALL))
@@ -125,7 +125,11 @@ def client(cfg: ExampleConfig):
     # Running variables
     is_allowed_to_run = True
     is_viewer_running = False
-    is_action_allowed = False
+
+    # tasks
+    ready = True
+    tasks = None
+    stage = 0
 
     while is_allowed_to_run and not is_viewer_running:
         is_viewer_running = sim.gym.query_viewer_has_closed(sim.viewer)
@@ -141,16 +145,25 @@ def client(cfg: ExampleConfig):
                 set_viewer(sim.gym, sim.viewer, cam_pos, cam_tar)
 
             if evt.action == "scheduler" and evt.value > 0:
-                scheduler.tasks(sim, size, step, goal)
-
-            if evt.action == "action" and evt.value > 0:
-                is_action_allowed = True
+                tasks = scheduler.tasks(sim)
 
         planner.reset_rollout_sim(torch_to_bytes(sim.dof_state[0]),
                                   torch_to_bytes(sim.root_state[0]),
                                   torch_to_bytes(sim.rigid_body_state[0]))
 
-        if is_action_allowed:
+        if tasks is not None:
+            if ready and len(tasks) != stage:
+                actor, [x, y] = tasks[stage]
+                move_mode = 0. if actor == 0 else 1.
+                
+                goal = torch.tensor([x, y, 0., 0., 0., 0., 1.], device=cfg["mppi"].device)
+                mode = torch.tensor([move_mode, actor], device=cfg["mppi"].device)
+
+                planner.update_objective_goal(torch_to_bytes(goal))
+                planner.update_objective_mode(torch_to_bytes(mode))
+    
+                ready = False
+
             action = bytes_to_torch(planner.command())
 
             if torch.any(torch.isnan(action)):
@@ -158,6 +171,10 @@ def client(cfg: ExampleConfig):
                 action = torch.zeros_like(action)
 
             sim.set_dof_velocity_target_tensor(action)
+
+            if len(tasks) != stage and scheduler.task_succeeded(sim, tasks[stage]):
+                ready = True
+                stage += 1
 
         sim.step()
 
