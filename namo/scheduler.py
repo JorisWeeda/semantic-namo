@@ -36,13 +36,15 @@ class Scheduler:
         for actor in range(1, amount_of_actors):
             actor_wrapper = sim.env_cfg[actor]
 
-            pose = self.get_pose(sim, actor)
+            pos = self.get_pos(sim, actor)
+            rot = self.get_ori(sim, actor)
+
             mass = self.get_mass(sim, actor)
             name = self.get_name(sim, actor)
             size = actor_wrapper.size
             free = not actor_wrapper.fixed
 
-            obstacles.append({"actor": actor, "name": name, "free": free, "mass": mass, "size": size,  "pos": pose[0], "rot": pose[1]})
+            obstacles.append({"actor": actor, "name": name, "free": free, "mass": mass, "size": size,  "pos": pos, "rot": rot})
 
         sorted_movable_obstacles = sorted((obstacle for obstacle in obstacles if obstacle["free"]), key=lambda obstacle: obstacle["mass"])
 
@@ -77,15 +79,18 @@ class Scheduler:
         transfer_tasks = []
         return [[7, [-1.5, 1.5]], [9, [1.5, 0.5]], [0, goal_pos]]
     
-    def task_succeeded(self, sim, task, epsilon=5e-2):
+    def task_succeeded(self, sim, task, epsilon=1e-1):
         actor, goal = task
-        pose = self.get_pose(sim, actor)
 
-        if np.abs(pose[0][0] - goal[0]) < epsilon and np.abs(pose[0][1] - goal[1]) < epsilon:
+        if actor == 0:
+            pos = self.get_robot_position(sim)
+        else:
+            pos = self.get_pos(sim, actor)
+
+        if np.abs(pos[0] - goal[0]) < epsilon and np.abs(pos[1] - goal[1]) < epsilon:
             return True
 
         return False
-
 
     def path_planner(self, grid, q_rob_init, q_rob_goal):
         rob_init_node_idx, _ = self.nearest_node(q_rob_init)
@@ -162,6 +167,11 @@ class Scheduler:
         return np.array((x, y, z), dtype=float), gymapi.Quat.to_euler_zyx(rigid_body_state[0][1])
 
     @staticmethod
+    def get_force(sim, actor):
+        sensor_data = sim.gym.get_actor_force_sensor(sim.envs[0], actor, 0).get_forces()
+        return sensor_data.force.length()
+
+    @staticmethod
     def get_mass(sim, actor):
         rigid_body_property = sim.gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
         return rigid_body_property.mass
@@ -171,6 +181,32 @@ class Scheduler:
         return sim.gym.get_actor_name(sim.envs[0], actor)
 
     @staticmethod
+    def get_pos(sim, actor):
+        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        return np.array([rb_state["pose"]["p"]["x"], rb_state["pose"]["p"]["y"], rb_state["pose"]["p"]["z"]], dtype=np.float32)
+
+    @staticmethod
+    def get_ori(sim, actor):
+        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        return gymapi.Quat.to_euler_zyx(rb_state["pose"]["r"])
+
+    @staticmethod
+    def get_lin_vel(sim, actor):
+        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        return np.array([rb_state["vel"]["linear"]["x"], rb_state["vel"]["linear"]["y"], rb_state["vel"]["linear"]["z"]], dtype=np.float32)
+
+    @staticmethod
+    def get_ang_vel(sim, actor):
+        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        return np.array([rb_state["vel"]["angular"]["x"], rb_state["vel"]["angular"]["y"], rb_state["vel"]["angular"]["z"]], dtype=np.float32)
+        
+    @staticmethod
     def get_robot_position(sim):
         rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
         return rob_pos[0].numpy()
+    
+    @staticmethod
+    def get_robot_velocity(sim):
+        rob_vel = torch.cat((sim.dof_state[:, 1].unsqueeze(1), sim.dof_state[:, 3].unsqueeze(1)), 1)
+        return rob_vel[0].numpy()
+    
