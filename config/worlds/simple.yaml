@@ -6,8 +6,8 @@ camera:
     tar: [0, 0, 0]
 
 scheduler:
-    step: 0.1
-    goal: [2.5, -2.5]
+    step: 0.2
+    goal: [0.0, 3.5]
 
 objects:
     wall:
@@ -61,63 +61,49 @@ objects:
         collision: True
 
 environment:
-    size: [6, 6]
+    size: [2, 8]
 
     demarcation:
         - wall:
             name: "f-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [0.0, 3.2, 0.0]
+            size: [2.0, 0.2, 0.5]
+            init_pos: [0.0, 4.2, 0.0]
             init_ori: [0.0, 0.0, 0.0]
         - wall:
             name: "b-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [0.0, -3.2, 0.0]
+            size: [2.0, 0.2, 0.5]
+            init_pos: [0.0, -4.2, 0.0]
             init_ori: [0.0, 0.0, 0.0]
         - wall:
             name: "l-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [-3.2, 0.0, 0.0]
+            size: [8.0, 0.2, 0.5]
+            init_pos: [-1.2, 0.0, 0.0]
             init_ori: [0.0, 0.0, 90.0]
         - wall:
             name: "r-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [3.2, 0.0, 0.0]
+            size: [8.0, 0.2, 0.5]
+            init_pos: [1.2, 0.0, 0.0]
             init_ori: [0.0, 0.0, 90.0]
-        - wall:
-            name: "dividing-wall 1"
-            size: [3.0, 0.2, 0.5]
-            init_pos: [0.0, -1.7, 0.0]
-            init_ori: [0.0, 0.0, 90.0]
+
 
     obstacles:
         - chair:
             name: "Chair 1"
-            init_pos: [-0.5, 0.0, 0.1]
+            init_pos: [-0.4, -2.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chair:
             name: "Chair 2"
-            init_pos: [-1.5, 0.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - chair:
-            name: "Chair 3"
-            init_pos: [-2.5, 0.0, 0.1]
+            init_pos: [0.4, -2.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chaise:
             name: "Chaise 1"
-            init_pos: [0.0, 0.5, 0.1]
+            init_pos: [-0.4, 1.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chaise:
             name: "Chaise 2"
-            init_pos: [0.0, 1.5, 0.1]
+            init_pos: [0.4, 1.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
-        - chaise:
-            name: "Chaise 3"
-            init_pos: [0.0, 2.5, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-
 
     robot:
-        init_pos: [-2.5, -2.5, 0.0]
-        init_ori: [0.0, 0.0, 90.0]
+        init_pos: [0.0, -3, 0.0]
         init_vel: [0.0, 0.0, 0.0]
