@@ -9,7 +9,7 @@ from omegaconf import OmegaConf
 from namo import Objective
 
 
-@hydra.main(version_base=None, config_path="config", config_name="config_heijn_push")
+@hydra.main(version_base=None, config_path="config", config_name="config_dingo_push")
 def server(cfg: ExampleConfig):
     cfg = OmegaConf.to_object(cfg)
 

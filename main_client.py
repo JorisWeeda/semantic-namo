@@ -5,6 +5,7 @@ import io
 import os
 import hydra
 import numpy as np
+import time
 import torch
 import yaml
 import zerorpc
@@ -14,7 +15,7 @@ from isaacgym import gymapi
 from scipy.spatial.transform import Rotation
 
 from namo import Scheduler
-
+from monitor import Monitor
 
 def set_viewer(gym, viewer, position, target):
     gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
@@ -32,7 +33,7 @@ def bytes_to_torch(buffer):
     return torch.load(buff)
 
 
-@hydra.main(version_base=None, config_path="config", config_name="config_heijn_push")
+@hydra.main(version_base=None, config_path="config", config_name="config_dingo_push")
 def client(cfg: ExampleConfig):
     cfg = OmegaConf.to_object(cfg)
 
@@ -46,7 +47,7 @@ def client(cfg: ExampleConfig):
         init_positions=cfg["initial_actor_positions"],
         actors=actors,
         num_envs=1,
-        viewer=True,
+        viewer=False,
         device=cfg["mppi"].device,
     )
 
@@ -112,47 +113,30 @@ def client(cfg: ExampleConfig):
 
     scheduler = Scheduler(size, step, goal)
 
-    # Copy initial state
-    initial_state = np.copy(sim.gym.get_sim_rigid_body_states(sim.sim, gymapi.STATE_ALL))
-
-    # Subscribe to keyboard events
-    sim.gym.subscribe_viewer_keyboard_event(sim.viewer, gymapi.KEY_ESCAPE, "stop")
-    sim.gym.subscribe_viewer_keyboard_event(sim.viewer, gymapi.KEY_S, "scheduler")
-    sim.gym.subscribe_viewer_keyboard_event(sim.viewer, gymapi.KEY_A, "action")
-    sim.gym.subscribe_viewer_keyboard_event(sim.viewer, gymapi.KEY_V, "viewer")
-    sim.gym.subscribe_viewer_keyboard_event(sim.viewer, gymapi.KEY_R, "reset")
-
     # Running variables
     is_allowed_to_run = True
-    is_viewer_running = False
+    is_task_scheduled = False
 
     # tasks
     ready = True
     tasks = None
     stage = 0
 
-    while is_allowed_to_run and not is_viewer_running:
-        is_viewer_running = sim.gym.query_viewer_has_closed(sim.viewer)
+    # Plotters
+    monitor = Monitor.create_robot_monitor(sim)
+    
+    while is_allowed_to_run:
 
-        for evt in sim.gym.query_viewer_action_events(sim.viewer):
-            if evt.action == "stop" and evt.value > 0:
-                is_allowed_to_run = False
-            
-            if evt.action == "reset" and evt.value > 0:
-                sim.gym.set_sim_rigid_body_states(sim, initial_state, gymapi.STATE_ALL)
-            
-            if evt.action == "viewer" and evt.value > 0:
-                set_viewer(sim.gym, sim.viewer, cam_pos, cam_tar)
-
-            if evt.action == "scheduler" and evt.value > 0:
-                tasks = scheduler.tasks(sim)
+        if not is_task_scheduled and sim.gym.get_elapsed_time(sim.sim) > 1.0:
+            tasks = scheduler.tasks(sim)
+            is_task_scheduled = True
 
         planner.reset_rollout_sim(torch_to_bytes(sim.dof_state[0]),
                                   torch_to_bytes(sim.root_state[0]),
                                   torch_to_bytes(sim.rigid_body_state[0]))
 
         if tasks is not None:
-            if ready and len(tasks) != stage:
+            if ready and stage < len(tasks):
                 actor, [x, y] = tasks[stage]
                 move_mode = 0. if actor == 0 else 1.
                 
@@ -172,12 +156,22 @@ def client(cfg: ExampleConfig):
 
             sim.set_dof_velocity_target_tensor(action)
 
-            if len(tasks) != stage and scheduler.task_succeeded(sim, tasks[stage]):
+            if stage < len(tasks) and scheduler.task_succeeded(sim, tasks[stage]):
+                print(f"Tasked succeeded, elapsed time: {sim.gym.get_elapsed_time(sim.sim)}")
                 ready = True
                 stage += 1
+            
+            if stage == len(tasks):
+                break
+        
+        monitor.add_data(sim)
 
         sim.step()
 
+    sim.gym.destroy_viewer(sim.viewer)
+    sim.gym.destroy_sim(sim.sim)
+
+    monitor.plotter()
 
 if __name__ == "__main__":
     client()
