@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 
-from motion.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper
-from motion.mppiisaac.utils.config_store import ExampleConfig
+from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper
+from control.mppiisaac.utils.config_store import ExampleConfig
 import io
 import os
 import hydra
@@ -11,16 +10,20 @@ import zerorpc
 import roslib
 
 from omegaconf import OmegaConf
-from isaacgym import gymapi
 from scipy.spatial.transform import Rotation
 
-from namo import Scheduler
+from isaacgym import gymapi
+
+from scheduler import Scheduler
 from monitor import Monitor
+from motion import Dingo
 
 
 PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
 CONFIG_NAME = "config_dingo_push"
+
+WOLRD_CONFIG = f"{PKG_PATH}/config/worlds/avoidance.yaml"
 
 
 def set_viewer(gym, viewer, position, target):
@@ -60,8 +63,7 @@ def client(cfg: ExampleConfig):
     )
 
     # Simulation parameters
-    world_config = f"{PKG_PATH}/config/worlds/blockage.yaml"
-    with open(world_config, "r") as stream:
+    with open(WOLRD_CONFIG, "r") as stream:
         params = yaml.safe_load(stream)
 
     # Create custom environment of a single simulated environment 
@@ -121,6 +123,9 @@ def client(cfg: ExampleConfig):
 
     scheduler = Scheduler(size, step, goal)
 
+    # Robot
+    dingo_robot = Dingo()
+
     # Running variables
     is_allowed_to_run = True
     is_task_scheduled = False
@@ -137,6 +142,8 @@ def client(cfg: ExampleConfig):
 
         if not is_task_scheduled and sim.gym.get_elapsed_time(sim.sim) > 1.0:
             tasks = scheduler.tasks(sim)
+            print(f"tasks {tasks}")
+
             is_task_scheduled = True
 
         planner.reset_rollout_sim(torch_to_bytes(sim.dof_state[0]),
@@ -157,6 +164,7 @@ def client(cfg: ExampleConfig):
                 ready = False
 
             action = bytes_to_torch(planner.command())
+            dingo_robot.move_forward(*action.numpy())
 
             if torch.any(torch.isnan(action)):
                 print("nan action")

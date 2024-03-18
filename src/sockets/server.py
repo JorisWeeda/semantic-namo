@@ -1,12 +1,12 @@
-from motion.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner
-from motion.mppiisaac.utils.config_store import ExampleConfig
+from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner 
+from control.mppiisaac.utils.config_store import ExampleConfig
 
 import hydra
 import zerorpc
 
 from omegaconf import OmegaConf
 
-from namo import Objective
+from scheduler import Objective
 
 
 CONFIG_NAME = "config_dingo_push"

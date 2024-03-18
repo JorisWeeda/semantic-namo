@@ -53,7 +53,7 @@ class Scheduler:
         start_grid = self.create_grid(obstacles, rob_inflation)
         robot_path, _  = self.path_planner(start_grid, init_pos, goal_pos)
 
-        transit_tasks = [0, goal_pos]
+        transit_tasks = [[0, goal_pos], ]
 
         if robot_path is not None:
             return transit_tasks
@@ -77,7 +77,7 @@ class Scheduler:
                 break
     
         transfer_tasks = []
-        return [[7, [-1.5, 1.5]], [9, [1.5, 0.5]], [0, goal_pos]]
+        return [[7, [-1.5, 1.5]], [9, [1.5, 0.5]], [0, goal_pos]] # blockage.yaml
     
     def task_succeeded(self, sim, task, epsilon=1e-1):
         actor, goal = task
