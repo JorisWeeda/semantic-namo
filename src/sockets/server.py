@@ -1,5 +1,5 @@
-from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner 
-from control.mppiisaac.utils.config_store import ExampleConfig
+from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner   # type: ignore
+from control.mppiisaac.utils.config_store import ExampleConfig      # type: ignore
 
 import hydra
 import zerorpc

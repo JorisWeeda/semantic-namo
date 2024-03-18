@@ -1,6 +1,6 @@
 
-from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper
-from control.mppiisaac.utils.config_store import ExampleConfig
+from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
+from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
 import io
 import os
 import hydra
