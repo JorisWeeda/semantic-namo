@@ -161,6 +161,7 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/main_client
   scripts/main_server
+  scripts/collector
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
