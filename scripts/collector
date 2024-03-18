@@ -1,0 +1,193 @@
+import rospy
+import os
+import csv
+import datetime
+
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import JointState
+from puma_motor_msgs.msg import MultiFeedback
+
+class Collector:
+
+    def __init__(self):
+        rospy.init_node('data_collector', anonymous=True)
+
+        self.vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+
+        rospy.Subscriber('/joint_states', JointState, self.joint_states_callback)
+        rospy.Subscriber('/feedback', MultiFeedback, self.feedback_callback)
+        rospy.Subscriber('/dingo_velocity_controller/odom', Odometry, self.pose_callback)
+
+        self.data_folder = os.path.join(os.path.expanduser('~'), 'velocity_data')
+        os.makedirs(self.data_folder, exist_ok=True)  # Create the data folder
+
+        self.do_monitor = False
+        self.start_time = None
+        
+        self.joint_pos = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
+        self.joint_vel = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
+        self.joint_eff = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
+
+        self.rob_pose_pos = {"t": [], "x": [], "y": [], "z": []}
+        self.rob_pose_rot = {"t": [], "x": [], "y": [], "z": [], "w": []}
+        self.rob_twist_lin = {"t": [], "x": [], "y": [], "z": []}
+        self.rob_twist_ang = {"t": [], "x": [], "y": [], "z": []}
+
+        self.wheel_cur = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
+        self.wheel_vol = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
+
+        self.data_header = ["joint_pos", "joint_vel", "joint_eff","rob_pos", "rob_rot", "rob_lin_vel", "rob_ang_vel", "wheel_cur", "wheel_vol"]
+        self.data = [self.joint_pos, self.joint_vel, self.joint_eff, self.rob_pose_pos, self.rob_pose_rot, self.rob_twist_lin, self.rob_twist_ang, self.wheel_cur, self.wheel_vol]
+
+    def joint_states_callback(self, data):
+        if self.do_monitor:
+            elapsed_time = rospy.get_time() - self.start_time
+
+            # Save joint position
+            self.joint_pos["t"].append(elapsed_time)
+            self.joint_pos["fl"].append(data.position[0])
+            self.joint_pos["fr"].append(data.position[1])
+            self.joint_pos["rl"].append(data.position[2])
+            self.joint_pos["rr"].append(data.position[3])
+
+            # Save joint velocity
+            self.joint_vel["t"].append(elapsed_time)
+            self.joint_vel["fl"].append(data.velocity[0])
+            self.joint_vel["fr"].append(data.velocity[1])
+            self.joint_vel["rl"].append(data.velocity[2])
+            self.joint_vel["rr"].append(data.velocity[3])
+
+            # Save joint effort
+            self.joint_eff["t"].append(elapsed_time)
+            self.joint_eff["fl"].append(data.effort[0])
+            self.joint_eff["fr"].append(data.effort[1])
+            self.joint_eff["rl"].append(data.effort[2])
+            self.joint_eff["rr"].append(data.effort[3])
+
+    def feedback_callback(self, data):
+        if self.do_monitor:
+            elapsed_time = rospy.get_time() - self.start_time
+
+            # Save current for each wheel
+            self.wheel_cur["t"].append(elapsed_time)
+            self.wheel_cur["fl"].append(data.drivers_feedback[0].current)
+            self.wheel_cur["fr"].append(data.drivers_feedback[1].current)
+            self.wheel_cur["rl"].append(data.drivers_feedback[2].current)
+            self.wheel_cur["rr"].append(data.drivers_feedback[3].current)
+
+            # Save voltage for each wheel
+            self.wheel_vol["t"].append(elapsed_time)
+            self.wheel_vol["fl"].append(data.drivers_feedback[0].duty_cycle)
+            self.wheel_vol["fr"].append(data.drivers_feedback[1].duty_cycle)
+            self.wheel_vol["rl"].append(data.drivers_feedback[2].duty_cycle)
+            self.wheel_vol["rr"].append(data.drivers_feedback[3].duty_cycle)
+
+
+    def pose_callback(self, data):
+        if self.do_monitor:
+            elapsed_time = rospy.get_time() - self.start_time
+
+            # Save robot pose position
+            self.rob_pose_pos["t"].append(elapsed_time)
+            self.rob_pose_pos["x"].append(data.pose.pose.position.x)
+            self.rob_pose_pos["y"].append(data.pose.pose.position.y)
+            self.rob_pose_pos["z"].append(data.pose.pose.position.z)
+
+            # Save robot pose orientation
+            self.rob_pose_rot["t"].append(elapsed_time)
+            self.rob_pose_rot["x"].append(data.pose.pose.orientation.x)
+            self.rob_pose_rot["y"].append(data.pose.pose.orientation.y)
+            self.rob_pose_rot["z"].append(data.pose.pose.orientation.z)
+            self.rob_pose_rot["w"].append(data.pose.pose.orientation.w)
+
+            # Save robot twist linear velocity
+            self.rob_twist_lin["t"].append(elapsed_time)
+            self.rob_twist_lin["x"].append(data.twist.twist.linear.x)
+            self.rob_twist_lin["y"].append(data.twist.twist.linear.y)
+            self.rob_twist_lin["z"].append(data.twist.twist.linear.z)
+
+            # Save robot twist angular velocity
+            self.rob_twist_ang["t"].append(elapsed_time)
+            self.rob_twist_ang["x"].append(data.twist.twist.angular.x)
+            self.rob_twist_ang["y"].append(data.twist.twist.angular.y)
+            self.rob_twist_ang["z"].append(data.twist.twist.angular.z)
+
+    def move_forward(self):
+        velocity = Twist()
+
+        end_position = None
+        self.do_monitor = True
+        self.start_time = rospy.get_time()
+
+        
+        velocity.linear.x = 0.4
+
+        while not rospy.is_shutdown():
+            self.vel_pub.publish(velocity)
+            
+            if self.rob_pose_pos["x"] and not end_position:
+                end_position = self.rob_pose_pos["x"][-1] + 3.0 
+
+            if self.rob_pose_pos["x"] and end_position < self.rob_pose_pos["x"][-1]:
+                break
+
+        self.do_monitor = False
+
+    def save_data(self, mass, folder):
+        file_name = f"{mass}.csv"
+        file_path = os.path.join(folder, file_name)
+
+        with open(file_path, 'w', newline='') as file:
+            writer = csv.writer(file)
+
+            headers = []
+            for idx, data_dict in enumerate(self.data):
+                headers += [f"{self.data_header[idx]}_{key}" for key in data_dict.keys()]
+
+            writer.writerow(headers)
+
+            max_length = max(len(data["t"]) for data in self.data)
+
+            for i in range(max_length):
+                row = []
+                for data_dict in self.data:
+                    for key in data_dict.keys():
+                        if i < len(data_dict["t"]):
+                            row.append(data_dict[key][i])
+                        else:
+                            row.append("")  # Add an empty string if data is not available
+                writer.writerow(row)
+
+        for data_dict in self.data:
+            for key in data_dict.keys():
+                data_dict[key] = []
+
+
+    def request_mass(self):
+        try:
+            mass = float(input("Please enter the mass of the pushed object: "))
+            return mass
+        except ValueError:
+            rospy.logerr("Invalid input for mass. Please enter a valid number.")
+            return self.request_mass()
+
+    def run(self):
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        datetime_folder = os.path.join(self.data_folder, current_datetime)
+        os.makedirs(datetime_folder, exist_ok=True)
+
+        num_runs = int(input("Enter the number of runs: "))
+        for run in range(num_runs):
+            mass = self.request_mass()
+            rospy.sleep(2)
+            
+            self.move_forward()
+            
+            self.save_data(mass, datetime_folder)
+            
+            rospy.sleep(2)
+
+if __name__ == "__main__":
+    collector = Collector()
+    collector.run()

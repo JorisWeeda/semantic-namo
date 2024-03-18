@@ -1,0 +1,7 @@
+<launch>
+    <!-- Specify the path to the Python virtual environment -->
+    <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
+
+    <!-- Launch the node with the specified Python interpreter -->
+    <node name="main_client_node" pkg="semantic_namo" type="main_client" output="screen" launch-prefix="$(arg venv)" />
+  </launch>
