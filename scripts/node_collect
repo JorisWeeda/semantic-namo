@@ -1,7 +1,8 @@
-import rospy
-import os
 import csv
 import datetime
+import math
+import os
+import rospy
 
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -37,8 +38,17 @@ class Collector:
         self.wheel_cur = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
         self.wheel_vol = {"t": [], "fl": [], "fr": [], "rl": [], "rr": []}
 
-        self.data_header = ["joint_pos", "joint_vel", "joint_eff","rob_pos", "rob_rot", "rob_lin_vel", "rob_ang_vel", "wheel_cur", "wheel_vol"]
-        self.data = [self.joint_pos, self.joint_vel, self.joint_eff, self.rob_pose_pos, self.rob_pose_rot, self.rob_twist_lin, self.rob_twist_ang, self.wheel_cur, self.wheel_vol]
+        self.data = {
+            "joint_pos": self.joint_pos,
+            "joint_vel": self.joint_vel,
+            "joint_eff": self.joint_eff,
+            "rob_pos": self.rob_pose_pos,
+            "rob_rot": self.rob_pose_rot,
+            "rob_lin_vel": self.rob_twist_lin,
+            "rob_ang_vel": self.rob_twist_ang,
+            "wheel_cur": self.wheel_cur,
+            "wheel_vol": self.wheel_vol
+        }
 
     def joint_states_callback(self, data):
         if self.do_monitor:
@@ -83,7 +93,6 @@ class Collector:
             self.wheel_vol["rl"].append(data.drivers_feedback[2].duty_cycle)
             self.wheel_vol["rr"].append(data.drivers_feedback[3].duty_cycle)
 
-
     def pose_callback(self, data):
         if self.do_monitor:
             elapsed_time = rospy.get_time() - self.start_time
@@ -113,15 +122,17 @@ class Collector:
             self.rob_twist_ang["y"].append(data.twist.twist.angular.y)
             self.rob_twist_ang["z"].append(data.twist.twist.angular.z)
 
-    def move_forward(self):
+    def push(self, push_direction_degrees):
         velocity = Twist()
 
         end_position = None
         self.do_monitor = True
         self.start_time = rospy.get_time()
 
-        
-        velocity.linear.x = 0.4
+        push_direction_radians = math.radians(push_direction_degrees)
+
+        velocity.linear.x = 0.4 * math.cos(push_direction_radians)
+        velocity.linear.y = 0.4 * math.sin(push_direction_radians)
 
         while not rospy.is_shutdown():
             self.vel_pub.publish(velocity)
@@ -134,59 +145,107 @@ class Collector:
 
         self.do_monitor = False
 
-    def save_data(self, mass, folder):
+    def save_data(self, angle, mass, folder):
+        angle_folder = os.path.join(folder, str(angle))
+        os.makedirs(angle_folder, exist_ok=True)
+
         file_name = f"{mass}.csv"
-        file_path = os.path.join(folder, file_name)
+        file_path = os.path.join(angle_folder, file_name)
 
         with open(file_path, 'w', newline='') as file:
             writer = csv.writer(file)
 
-            headers = []
-            for idx, data_dict in enumerate(self.data):
-                headers += [f"{self.data_header[idx]}_{key}" for key in data_dict.keys()]
+            writer.writerow(list(self.data.keys()))
 
-            writer.writerow(headers)
-
-            max_length = max(len(data["t"]) for data in self.data)
+            max_length = max(len(data["t"]) for data in self.data.values())
 
             for i in range(max_length):
                 row = []
-                for data_dict in self.data:
+
+                for data_dict in self.data.values():
                     for key in data_dict.keys():
                         if i < len(data_dict["t"]):
                             row.append(data_dict[key][i])
                         else:
-                            row.append("")  # Add an empty string if data is not available
+                            row.append("")
+
                 writer.writerow(row)
 
-        for data_dict in self.data:
+        for data_dict in self.data.values():
             for key in data_dict.keys():
                 data_dict[key] = []
 
-
-    def request_mass(self):
-        try:
-            mass = float(input("Please enter the mass of the pushed object: "))
-            return mass
-        except ValueError:
-            rospy.logerr("Invalid input for mass. Please enter a valid number.")
-            return self.request_mass()
-
     def run(self):
-        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        datetime_folder = os.path.join(self.data_folder, current_datetime)
-        os.makedirs(datetime_folder, exist_ok=True)
+        use_save = self.request_saving()
 
-        num_runs = int(input("Enter the number of runs: "))
-        for run in range(num_runs):
+        if use_save:
+            experiment_name = self.request_name()
+            current_datetime = datetime.datetime.now().strftime("%Y-%m-%d")
+            datetime_folder = os.path.join(self.data_folder, f"{current_datetime}_{experiment_name}")
+
+            os.makedirs(datetime_folder, exist_ok=True)
+
+        push_direction_degrees = self.request_direction()
+
+        runs = self.request_runs()
+        for _ in range(runs):
             mass = self.request_mass()
-            rospy.sleep(2)
+
+            self.push(push_direction_degrees)
+
+            if use_save:
+                self.save_data(push_direction_degrees, mass, datetime_folder)
             
-            self.move_forward()
-            
-            self.save_data(mass, datetime_folder)
-            
-            rospy.sleep(2)
+    @staticmethod
+    def request_saving():
+        while True:
+            do_save = input("Save data of robot actions? ")
+
+            if do_save == "yes":
+                rospy.loginfo("Saving data is turned on.")
+                return True
+            elif do_save == "no":
+                rospy.loginfo("Saving data is turned off.")
+                return False
+            else:
+                rospy.logerr("Invalid input. Please enter yes/no.")
+
+    @staticmethod
+    def request_name():
+        name = input("Please enter unique name for this experiment: ")
+        return name
+
+    @staticmethod
+    def request_direction():
+        while True:
+            try:
+                degrees = int(input("Please enter the push direction (0 - 360) degrees: "))
+                if 0 <= degrees <= 360:
+                    rospy.loginfo(f"Push degrees is set to {degrees}.")
+                    return degrees
+                rospy.logerr("Invalid input. Please enter (0 - 360) degrees.")
+            except ValueError:
+                rospy.logerr("Invalid input. Please enter a valid integer.")
+
+    @staticmethod
+    def request_mass():
+        while True:
+            try:
+                mass = float(input("Please enter the mass of the pushed object (0 - 100) kg: "))
+                return mass
+            except ValueError:
+                rospy.logerr("Invalid input. Please enter a valid number.")
+
+    @staticmethod
+    def request_runs():
+        while True:
+            try:
+                runs = int(input("Please enter the amount of runs (0 - 100): "))
+                if 0 <= runs <= 100:
+                    return runs
+                rospy.logerr("Invalid input. Please enter a number between 1 and 100.")
+            except ValueError:
+                rospy.logerr("Invalid input. Please enter a valid integer.")
 
 if __name__ == "__main__":
     collector = Collector()

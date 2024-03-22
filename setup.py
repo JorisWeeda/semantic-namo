@@ -3,9 +3,9 @@ from catkin_pkg.python_setup import generate_distutils_setup
 from setuptools import setup
 
 setup_args = generate_distutils_setup(
-    packages=['control', 'isaacgym', 'monitor', 'motion', 'scheduler', 'sockets'],
+    packages=['control', 'environment', 'isaacgym', 'monitor', 'motion', 'scheduler', 'sockets'],
     package_dir={'': 'src'},
-    scripts=['scripts/main_client', 'scripts/main_server', 'scripts/collector'],
+    scripts=['scripts/node_client', 'scripts/node_server', 'scripts/node_collect'],
 )
 
 setup(**setup_args)

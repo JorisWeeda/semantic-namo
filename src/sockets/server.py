@@ -28,7 +28,4 @@ def server(cfg: ExampleConfig):
 
 def ros_main():
     hydra.initialize(config_path="../../config", version_base=None)
-    
-    cfg = hydra.compose(config_name="config_dingo_push")
-
-    server(cfg)
+    server(hydra.compose(config_name="config_dingo_push"))
