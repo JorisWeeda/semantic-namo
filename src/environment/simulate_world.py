@@ -1,24 +1,30 @@
 from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
 
 import io
+import roslib
 import torch
 import yaml
-import roslib
+import zerorpc
 
 from scipy.spatial.transform import Rotation
 
 from isaacgym import gymapi
+
+from motion import Dingo
 
 
 class SimulateWorld:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-    def __init__(self, params, config, simulation):
+    def __init__(self, params, config, simulation, controller):
         self.params = params
         self.config = config
 
         self.simulation = simulation
+        self.controller = controller
+
+        self.robot = Dingo()
 
     @classmethod
     def create_world(cls, config, world):
@@ -40,11 +46,16 @@ class SimulateWorld:
         with open(world_config, "r") as stream:
             params = yaml.safe_load(stream)
 
-        return cls(params, config, simulation)
+        controller = zerorpc.Client()
+        controller.connect("tcp://127.0.0.1:4242")
+
+        return cls(params, config, simulation, controller)
     
     def configure_world(self):
         additions = self.create_additions()
+
         self.simulation.add_to_envs(additions)
+        self.controller.add_to_env(additions)
 
         init_pos = self.params["environment"]["robot"]["init_pos"]
         init_vel = self.params["environment"]["robot"]["init_vel"]
@@ -82,12 +93,36 @@ class SimulateWorld:
             additions.append(obstacle)
 
         return additions
+    
+    def run_simulation(self, is_executing_task=False):
+        df_state_tensor = self.torch_to_bytes(self.simulation.dof_state[0])
+        rt_state_tensor = self.torch_to_bytes(self.simulation.root_state[0])
+        rb_state_tensor = self.torch_to_bytes(self.simulation.rigid_body_state[0])
 
-    def destroy_viewer(self):
-        self.simulation.sim.gym.destroy_viewer(self.simulation.sim.viewer)
+        self.controller.reset_rollout_sim(df_state_tensor, rt_state_tensor, rb_state_tensor)
+        
+        if is_executing_task:
+            action = self.bytes_to_torch(self.controller.command())
 
-    def destroy_sim(self):
-        self.simulation.sim.gym.destroy_sim(self.simulation.sim)
+            if torch.any(torch.isnan(action)):
+                action = torch.zeros_like(action)
+
+            self.simulation.set_dof_velocity_target_tensor(action)
+            # self.robot.move(*action.numpy())
+
+        self.simulation.step()
+
+
+    def update_objective(self, goal, mode):
+        self.controller.update_objective_goal(self.torch_to_bytes(goal))
+        self.controller.update_objective_mode(self.torch_to_bytes(mode))
+
+    def get_elapsed_time(self):
+        return self.simulation.gym.get_elapsed_time(self.simulation.sim)
+
+    def destroy_simulation(self):
+        self.simulation.gym.destroy_viewer(self.simulation.viewer)
+        self.simulation.gym.destroy_sim(self.simulation.sim)
 
     @staticmethod
     def set_viewer(gym, viewer, position, target):
