@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+
+import hydra
+import rospy
+
+from environment import SimulateWorld, PhysicalWorld
+
+
+if __name__ == "__main__":
+    rospy.init_node('environment', anonymous=True)
+    
+    configuration = rospy.get_param('~configuration')
+    run_frequency = rospy.get_param('~run_frequency')
+    is_simulation = rospy.get_param('~is_simulation')
+
+    hydra.initialize(config_path="../config", version_base=None)
+
+    if is_simulation:
+        rospy.loginfo(f'Running simulate world with configuration: {configuration}')
+        world = SimulateWorld.build(hydra.compose(configuration))
+    else:
+        rospy.loginfo(f'Running physical world with configuration: {configuration}')
+        world = PhysicalWorld.build(hydra.compose(configuration))
+
+    world.configure()
+
+    rate = rospy.Rate(run_frequency)
+    while not rospy.is_shutdown():
+        world.run()
+
+        rate.sleep()

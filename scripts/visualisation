@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+
+from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
+from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
+
+import hydra
+import roslib
+import rospy
+import yaml
+
+import numpy as np
+from tf.transformations import euler_from_quaternion
+from scipy.spatial.transform import Rotation
+from nav_msgs.msg import Odometry
+from omegaconf import OmegaConf
+
+from isaacgym import gymapi
+
+
+PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
+RB_STATE = np.array([0., 0., 0.])
+
+
+def robot_state_cb(msg):
+    pos = msg.pose.pose.position
+    ori = msg.pose.pose.orientation
+
+    _, _, yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
+
+    RB_STATE = np.array([pos.x, pos.y, yaw])
+
+
+def set_viewer(gym, viewer, position, target):
+    gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
+
+
+def create_additions(params):
+    additions =[]
+
+    if params["environment"].get("demarcation", None):
+        for wall in params["environment"]["demarcation"]:
+            obs_type = next(iter(wall))
+            obs_args = params["objects"][obs_type]
+
+            obstacle = {**obs_args, **wall[obs_type]}
+
+            rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
+            obstacle["init_ori"] = list(rot)
+
+            additions.append(obstacle)
+
+    if params["environment"].get("obstacles", None):
+        for obstacle in params["environment"]["obstacles"]:
+            obs_type = next(iter(obstacle))
+            obs_args = params["objects"][obs_type]
+
+            obstacle = {**obs_args, **obstacle[obs_type]}
+
+            rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
+            obstacle["init_ori"] = list(rot)
+
+            additions.append(obstacle)
+
+    return additions
+
+
+@hydra.main(version_base=None, config_path="config")
+def visualizer(config: ExampleConfig):
+    config = OmegaConf.to_object(config)
+
+    actors=[]
+    for actor_name in config["actors"]:
+        with open(f'{PKG_PATH}/config/actors/{actor_name}.yaml') as f:
+            actors.append(ActorWrapper(**yaml.load(f, Loader=yaml.SafeLoader)))
+
+    simulation = IsaacGymWrapper(
+        config["isaacgym"],
+        init_positions=config["initial_actor_positions"],
+        actors=actors,
+        num_envs=1,
+        viewer=True,
+        device=config["mppi"].device,
+    )
+
+    world_config = f'{PKG_PATH}/config/worlds/{config["world"]}.yaml'
+    with open(world_config, "r") as stream:
+        params = yaml.safe_load(stream)
+
+    additions = create_additions(params)
+    simulation.add_to_envs(additions)
+
+    cam_pos = params["camera"]["pos"]
+    cam_tar = params["camera"]["tar"]
+    set_viewer(simulation.gym, simulation.viewer, cam_pos, cam_tar)
+    
+    return simulation
+
+
+if __name__ == "__main__":
+    rospy.init_node('visualisation', anonymous=True)
+
+    rospy.loginfo(f'Creating visualizer for the physical world.')
+
+    configuration = rospy.get_param('~configuration')
+    run_frequency = rospy.get_param('~run_frequency')
+
+    hydra.initialize(config_path="../config", version_base=None)
+    visualisation = visualizer(hydra.compose(configuration))
+
+    rospy.Subscriber("/optitrack_state_estimator/Dingo/state", Odometry, robot_state_cb, queue_size=1,)
+    rospy.wait_for_message('/optitrack_state_estimator/Dingo/state', Odometry, timeout=10)
+
+    rate = rospy.Rate(run_frequency)
+    while not rospy.is_shutdown():
+
+        visualisation.reset_robot_state(RB_STATE, np.zeros_like(RB_STATE))
+        visualisation.step()
+        
+        rate.sleep()
