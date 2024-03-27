@@ -61,48 +61,6 @@ objects:
         collision: True
 
 environment:
-    size: [2, 8]
-
-    demarcation:
-        - wall:
-            name: "f-demarcation-wall"
-            size: [2.0, 0.2, 0.5]
-            init_pos: [0.0, 4.2, 0.0]
-            init_ori: [0.0, 0.0, 0.0]
-        - wall:
-            name: "b-demarcation-wall"
-            size: [2.0, 0.2, 0.5]
-            init_pos: [0.0, -4.2, 0.0]
-            init_ori: [0.0, 0.0, 0.0]
-        - wall:
-            name: "l-demarcation-wall"
-            size: [8.0, 0.2, 0.5]
-            init_pos: [-1.2, 0.0, 0.0]
-            init_ori: [0.0, 0.0, 90.0]
-        - wall:
-            name: "r-demarcation-wall"
-            size: [8.0, 0.2, 0.5]
-            init_pos: [1.2, 0.0, 0.0]
-            init_ori: [0.0, 0.0, 90.0]
-
-
-    obstacles:
-        - chair:
-            name: "Chair 1"
-            init_pos: [-0.4, -2.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - chair:
-            name: "Chair 2"
-            init_pos: [0.4, -2.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - chaise:
-            name: "Chaise 1"
-            init_pos: [-0.4, 1.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - chaise:
-            name: "Chaise 2"
-            init_pos: [0.4, 1.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
 
     robot:
         init_state: [0.0, -3, 0.0]

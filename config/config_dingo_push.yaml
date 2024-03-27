@@ -11,3 +11,4 @@ nx: 6
 actors: ['dingo']
 initial_actor_positions: [[0.0, 0.0, 0.05]]
 
+world: 'sandbox'

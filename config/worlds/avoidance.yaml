@@ -1,4 +1,4 @@
-name: "Sandbox"
+name: "Avoidance"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
 camera:
@@ -94,6 +94,4 @@ environment:
 
 
     robot:
-        init_pos: [0.0, 0.0, 0.0]
-        init_ori: [0.0, 0.0, 0.0]
-        init_vel: [0.0, 0.0, 0.0]
+        init_state: [0.0, 0.0, 0.0]

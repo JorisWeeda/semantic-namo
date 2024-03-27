@@ -1,4 +1,4 @@
-name: "Sandbox"
+name: "Blockage"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
 camera:
@@ -118,6 +118,4 @@ environment:
 
 
     robot:
-        init_pos: [-2.5, -2.5, 0.0]
-        init_ori: [0.0, 0.0, 90.0]
-        init_vel: [0.0, 0.0, 0.0]
+        init_state: [-2.5, -2.5, 0.0]
