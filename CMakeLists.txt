@@ -8,6 +8,7 @@ project(semantic_namo)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
+  dynamic_reconfigure
   rospy
   std_msgs
 )
@@ -87,10 +88,9 @@ catkin_python_setup()
 ##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
-# generate_dynamic_reconfigure_options(
-#   cfg/DynReconf1.cfg
-#   cfg/DynReconf2.cfg
-# )
+generate_dynamic_reconfigure_options(
+  config/weights/DingoCost.cfg
+)
 
 ###################################
 ## catkin specific configuration ##
@@ -162,6 +162,10 @@ catkin_install_python(PROGRAMS
   scripts/node_client
   scripts/node_server
   scripts/node_collect
+  scripts/controller
+  scripts/environment
+  scripts/visualisation
+  scripts/mimic_topic
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

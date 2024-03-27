@@ -5,7 +5,8 @@ from setuptools import setup
 setup_args = generate_distutils_setup(
     packages=['control', 'environment', 'isaacgym', 'monitor', 'motion', 'scheduler', 'sockets'],
     package_dir={'': 'src'},
-    scripts=['scripts/node_client', 'scripts/node_server', 'scripts/node_collect'],
+    scripts=['scripts/node_client', 'scripts/node_server', 'scripts/node_collect', 
+             'scripts/environment', 'scripts/controller', 'scripts/mimic_topic', 'scripts/visualisation'],
 )
 
 setup(**setup_args)

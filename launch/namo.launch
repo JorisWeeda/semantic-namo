@@ -1,0 +1,28 @@
+<launch>
+    <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
+    
+    <arg name="configuration" default="config_dingo_push" />
+    <arg name="is_simulation" default="true" />
+    <arg name="run_frequency" default="30" />
+    
+    <node name="mimic_topic" pkg="semantic_namo" type="mimic_topic" output="screen" launch-prefix="$(arg venv)" />
+
+    <group if="$(eval is_simulation)">
+        <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
+            <param name="configuration" value="$(arg configuration)" />
+        </node>
+    </group>
+
+    <group unless="$(eval is_simulation)">
+        <node name="visualisation" pkg="semantic_namo" type="visualisation" output="screen" launch-prefix="$(arg venv)" >
+            <param name="configuration" value="$(arg configuration)" />
+            <param name="run_frequency" value="$(arg run_frequency)" />
+    </node>
+    </group>
+
+    <node name="environment" pkg="semantic_namo" type="environment" output="screen" required="true" launch-prefix="$(arg venv)">
+        <param name="configuration" value="$(arg configuration)" />
+        <param name="is_simulation" value="$(arg is_simulation)" />
+        <param name="run_frequency" value="$(arg run_frequency)" />
+    </node>
+</launch>
