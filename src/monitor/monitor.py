@@ -71,7 +71,6 @@ class Monitor:
         axis[1][0].grid(True)  
         axis[1][0].legend()
 
-            
         for idx, name in enumerate(self.actors_name.values()):
             axis[0][1].plot(self.force_arr[:, 0], self.force_arr[:, idx + 1], label=name)
 

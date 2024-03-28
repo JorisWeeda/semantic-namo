@@ -1,106 +1,87 @@
-import pandas as pd
+from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
+from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
+
+import rospy
+import roslib
+import yaml
+
 import numpy as np
-import matplotlib.pyplot as plt
+
+from tf.transformations import euler_from_quaternion
+from nav_msgs.msg import Odometry
+
+from isaacgym import gymapi
 
 
-file_path_1 = "/home/joris/velocity_data/2024-02-22_14-23-23/0.0.csv"
-file_path_2 = "/home/joris/velocity_data/2024-02-22_14-23-23/10.0.csv"
+class Viewer:
 
-df_1 = pd.read_csv(file_path_1, sep=',')
-df_2 = pd.read_csv(file_path_2, sep=',')
+    PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-categories = {
-    'joint_pos': ['fl', 'fr', 'rl', 'rr'],
-    'joint_vel': ['fl', 'fr', 'rl', 'rr'],
-    'joint_eff': ['fl', 'fr', 'rl', 'rr'],
-    'joint_acc': ['fl', 'fr', 'rl', 'rr'], 
-    'rob_pos': ['x', 'y', 'z'],
-    'rob_rot': ['x', 'y', 'z', 'w'],
-    'rob_lin_vel': ['x', 'y', 'z'],
-    'rob_ang_vel': ['x', 'y', 'z'],
-    'rob_lin_acc': ['x', 'y', 'z'], 
-    'wheel_cur': ['fl', 'fr', 'rl', 'rr'],
-    'wheel_vol': ['fl', 'fr', 'rl', 'rr'],
-    'joint_acc': ['fl', 'fr', 'rl', 'rr'],
-    'consumed_power': ['rob']
-}
+    def __init__(self, params, config, simulation):
+        self.simulation = simulation
 
-show_category = {
-    'joint_pos': False,
-    'joint_vel': False,
-    'joint_eff': False,
-    'joint_acc': False,
-    'rob_pos': False,
-    'rob_rot': False,
-    'rob_lin_vel': False,
-    'rob_ang_vel': False,
-    'rob_lin_acc': True,
-    'wheel_cur': True,
-    'wheel_vol': False,
-    'consumed_power': True
-}
+        self.params = params
+        self.config = config
 
-# Add accelerations data frame 1
-for joint in ['fl', 'fr', 'rl', 'rr']:
-    df_1[f'joint_acc_{joint}'] = df_1[f'joint_vel_{joint}'].diff() / df_1['joint_vel_t'].diff()
-df_1['joint_acc_t'] = df_1['joint_vel_t']
+        self.robot_q = None
 
-for axis in ['x', 'y', 'z']:
-    df_1[f'rob_lin_acc_{axis}'] = (df_1[f'rob_lin_vel_{axis}'].diff() / df_1['rob_lin_vel_t'].diff() +
-                               df_1[f'rob_ang_vel_{axis}'].diff() / df_1['rob_ang_vel_t'].diff())
-df_1['rob_lin_acc_t'] = df_1['rob_lin_vel_t']
+    @classmethod
+    def build(cls, config: ExampleConfig, layout: str):
+        viewer = cls.create(config, layout)
+        viewer.configure()
+        return viewer
 
-# Add accelerations data frame 2
-for joint in ['fl', 'fr', 'rl', 'rr']:
-    df_2[f'joint_acc_{joint}'] = df_2[f'joint_vel_{joint}'].diff() / df_2['joint_vel_t'].diff()
-df_2['joint_acc_t'] = df_2['joint_vel_t']
+    @classmethod
+    def create(cls, config, layout):
+        actors=[]
+        for actor_name in config["actors"]:
+            with open(f'{cls.PKG_PATH}/config/actors/{actor_name}.yaml') as f:
+                actors.append(ActorWrapper(**yaml.load(f, Loader=yaml.SafeLoader)))
 
-for axis in ['x', 'y', 'z']:
-    df_2[f'rob_lin_acc_{axis}'] = (df_2[f'rob_lin_vel_{axis}'].diff() / df_2['rob_lin_vel_t'].diff() +
-                               df_2[f'rob_ang_vel_{axis}'].diff() / df_2['rob_ang_vel_t'].diff())
-df_2['rob_lin_acc_t'] = df_2['rob_lin_vel_t']
+        simulation = IsaacGymWrapper(
+            config["isaacgym"],
+            init_positions=config["initial_actor_positions"],
+            actors=actors,
+            num_envs=1,
+            viewer=True,
+            device=config["mppi"].device,
+        )
 
-# Add consumed power data frame 1
-df_1['consumed_power_rob'] = abs(df_1['wheel_cur_fl'] * df_1['wheel_vol_fl'] +
-                           df_1['wheel_cur_fr'] * df_1['wheel_vol_fr'] +
-                           df_1['wheel_cur_rl'] * df_1['wheel_vol_rl'] +
-                           df_1['wheel_cur_rr'] * df_1['wheel_vol_rr'])
+        world_config = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
+        with open(world_config, "r") as stream:
+            params = yaml.safe_load(stream)
 
-df_1['consumed_power_rob'] = df_1['consumed_power_rob'].cumsum()
-df_1['consumed_power_t'] = df_1['wheel_vol_t']
+        return cls(params, config, simulation)
+    
+    def configure(self):
+        rospy.Subscriber("/optitrack_state_estimator/Dingo/state", Odometry, self._robot_state_cb, queue_size=1,)
+        rospy.wait_for_message('/optitrack_state_estimator/Dingo/state', Odometry, timeout=10)
 
-# Add consumed power data frame 2
-df_2['consumed_power_rob'] = abs(df_2['wheel_cur_fl'] * df_2['wheel_vol_fl'] +
-                           df_2['wheel_cur_fr'] * df_2['wheel_vol_fr'] +
-                           df_2['wheel_cur_rl'] * df_2['wheel_vol_rl'] +
-                           df_2['wheel_cur_rr'] * df_2['wheel_vol_rr'])
+        cam_pos = self.params["camera"]["pos"]
+        cam_tar = self.params["camera"]["tar"]
+        self.set_viewer(self.simulation.gym, self.simulation.viewer, cam_pos, cam_tar)
 
-df_2['consumed_power_rob'] = df_2['consumed_power_rob'].cumsum()
-df_2['consumed_power_t'] = df_2['wheel_vol_t']
+    def run(self):
+        self.simulation.reset_robot_state(self.robot_q, np.zeros_like(self.robot_q))
+        self.simulation.step()
 
-for category, columns in categories.items():
-    if not show_category.get(category, False) or not columns:  # Check if columns list is empty
-        continue
+    def destroy(self):
+        self.simulation.gym.destroy_viewer(self.simulation.viewer)
+        self.simulation.gym.destroy_sim(self.simulation.sim)
 
-    fig, axes = plt.subplots(len(columns), figsize=(8, 6)) 
-    fig.suptitle(category.capitalize())
+    @staticmethod
+    def set_viewer(gym, viewer, position, target):
+        gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
 
-    for i, column in enumerate(columns):
-        ax = axes[i] if len(columns) > 1 else axes  # Adjust for single column plot
-        
-        x_data_1 = df_1[f"{category.lower()}_t"]
-        y_data_1 = df_1[f"{category.lower()}_{column}"]
-        ax.plot(x_data_1, y_data_1, label='0 KG', color='blue')
+    def _robot_state_cb(self, msg):
+        pos = msg.pose.pose.position
+        ori = msg.pose.pose.orientation
 
-        x_data_2 = df_2[f"{category.lower()}_t"]
-        y_data_2 = df_2[f"{category.lower()}_{column}"]
-        ax.plot(x_data_2, y_data_2, label='10 KG', color='orange')
+        lin = msg.twist.twist.linear
+        ang = msg.twist.twist.angular
 
-        ax.set_title(column)
-        ax.set_xlabel('Time')
-        ax.set_ylabel(column)
-        ax.legend()
+        _, _, yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
 
-    plt.tight_layout()
-    plt.show()
-
+        self.robot_R = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+        self.robot_q = np.array([pos.x, pos.y, yaw])
+        self.robot_q_dot = np.array([lin.x, lin.y, ang.z,])

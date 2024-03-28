@@ -1,7 +1,7 @@
 from control.mppiisaac.planner.isaacgym_wrapper import ActorWrapper     # type: ignore
 from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner       # type: ignore
+from control.mppiisaac.utils.config_store import ExampleConfig          # type: ignore
 
-import hydra
 import rospy
 import roslib
 import yaml
@@ -33,20 +33,20 @@ class PhysicalWorld:
         self.robot_q = None
         self.robot_q_dot = None
 
-    @hydra.main(version_base=None, config_path="config")
-    def build(config):
-        world = PhysicalWorld.create(config, config["world"])
+    @classmethod
+    def build(cls, config: ExampleConfig, layout: str):
+        world = PhysicalWorld.create(config, layout)
         world.configure()
         return world
-
+    
     @classmethod
-    def create(cls, config, world):
+    def create(cls, config, layout):
         actors=[]
         for actor_name in config["actors"]:
             with open(f'{cls.PKG_PATH}/config/actors/{actor_name}.yaml') as f:
                 actors.append(ActorWrapper(**yaml.load(f, Loader=yaml.SafeLoader)))
 
-        world_config = f'{cls.PKG_PATH}/config/worlds/{world}.yaml'
+        world_config = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
         with open(world_config, "r") as stream:
             params = yaml.safe_load(stream)
 

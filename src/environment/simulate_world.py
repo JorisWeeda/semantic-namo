@@ -1,7 +1,6 @@
 from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
 from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
 
-import hydra
 import io
 import math
 import roslib
@@ -26,12 +25,14 @@ class SimulateWorld:
         self.params = params
         self.config = config
 
-    @hydra.main(version_base=None, config_path="config")
-    def build(config: ExampleConfig):
-        return SimulateWorld.create(config)
+    @classmethod
+    def build(cls, config: ExampleConfig, layout: str):
+        world = cls.create(config, layout)
+        world.configure()
+        return world
 
     @classmethod
-    def create(cls, config):
+    def create(cls, config, layout):
         actors=[]
         for actor_name in config["actors"]:
             with open(f'{cls.PKG_PATH}/config/actors/{actor_name}.yaml') as f:
@@ -46,7 +47,7 @@ class SimulateWorld:
             device=config["mppi"].device,
         )
 
-        world_config = f'{cls.PKG_PATH}/config/worlds/{config["world"]}.yaml'
+        world_config = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
         with open(world_config, "r") as stream:
             params = yaml.safe_load(stream)
 

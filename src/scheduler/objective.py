@@ -1,11 +1,17 @@
 import torch
-import isaacgym.gymapi as gymapi
+
 import pytorch3d.transforms as p3dtransforms
+from dynamic_reconfigure.server import Server
+
+from semantic_namo.cfg import DingoCostConfig  #type: ignore
+
 
 class Objective:
-    def __init__(self, device):
-        self._mode = torch.tensor([0., 0.], device=device)   # [transit(0)/transfer(1), block_index]
-        self._goal = torch.tensor([0., 0., 0., 0., 0., 0., 1.], device=device)
+    def __init__(self):
+        self._parameter_server = Server(DingoCostConfig, self.update_weights) 
+
+        self._mode = torch.tensor([0., 0.])   # [transit(0)/transfer(1), block_index]
+        self._goal = torch.tensor([0., 0., 0., 0., 0., 0., 1.])
 
         self.w_nav = 1.0
         self.w_obs = 0.1
@@ -19,11 +25,35 @@ class Objective:
         self.w_collision = 10
         self.w_vel = 0.
 
+    def update_weights(self, config, *args):
+        self.w_robot_to_block_pos= config["w_robot_to_block_pos"]#1.0#10#2
+        self.w_block_to_goal_pos=  config["w_block_to_goal_pos"]#2.5#25#12.0 
+        self.w_block_to_goal_ort=  config["w_block_to_goal_ort"]#2.1#21#10.0
+        self.w_push_align=         config["w_push_align"]#1.5#15#4.2
+        self.w_collision=          config["w_collision"]#0.0
+        self.w_vel=                config["w_vel"]#0.0
+
+        print('updated weights')
+        print(config["w_robot_to_block_pos"])
+        print(config["w_block_to_goal_pos"])
+        print(config["w_block_to_goal_ort"])
+        print(config["w_push_align"])
+        print(config["w_collision"])
+        print(config["w_vel"])
+        print('\n')
+        return config
+
     def compute_cost(self, sim):
         pos = self._get_robot_position(sim)
 
         if self._mode[0] == 0.:
-            return self._compute_navigation_cost(pos) + self._compute_collision_cost(sim) + self._compute_obstacle_cost(sim, pos)
+            cost = self._compute_navigation_cost(pos)
+
+            if len(sim.obstacle_indices) != 0:
+                cost += self._compute_collision_cost(sim)
+                cost += self._compute_obstacle_cost(sim, pos)
+
+            return cost
   
         elif self._mode[0] == 1.:
             return self._compute_transfer_cost(sim, pos)
