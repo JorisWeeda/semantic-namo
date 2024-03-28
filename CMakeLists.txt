@@ -159,13 +159,11 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-  scripts/node_client
-  scripts/node_server
-  scripts/node_collect
+  scripts/collector
   scripts/controller
   scripts/environment
-  scripts/visualisation
   scripts/mimic_topic
+  scripts/visualisation
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
