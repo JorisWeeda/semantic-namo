@@ -14,8 +14,7 @@ from omegaconf import OmegaConf
 from scheduler import Objective
 
 
-@hydra.main(version_base=None, config_path="config")
-def controller(config: ExampleConfig):
+def controller(config: ExampleConfig,  layout: str):
     config = OmegaConf.to_object(config)
 
     rospy.loginfo(f'Creating controller on server tcp://0.0.0.0:4242')
@@ -40,7 +39,10 @@ def controller(config: ExampleConfig):
 if __name__ == "__main__":
     rospy.init_node('controller', anonymous=True)
 
-    configuration = rospy.get_param('~configuration')
+    config = rospy.get_param('~config')
+    layout = rospy.get_param('~layout')
 
     hydra.initialize(config_path="../config", version_base=None)
-    controller(hydra.compose(configuration))
+    hydra_config = hydra.compose(config)
+    
+    controller(hydra_config, layout)

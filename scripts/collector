@@ -9,6 +9,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import JointState
 from puma_motor_msgs.msg import MultiFeedback
 
+
 class Collector:
 
     def __init__(self):
@@ -19,7 +20,6 @@ class Collector:
         rospy.Subscriber('/joint_states', JointState, self.joint_states_callback)
         rospy.Subscriber('/feedback', MultiFeedback, self.feedback_callback)
         rospy.Subscriber('/dingo_velocity_controller/odom', Odometry, self.pose_callback)
-
         self.data_folder = os.path.join(os.path.expanduser('~'), 'velocity_data')
         os.makedirs(self.data_folder, exist_ok=True)  # Create the data folder
 
