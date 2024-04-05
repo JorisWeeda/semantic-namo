@@ -115,6 +115,8 @@ class SimulateWorld:
 
         self.simulation.set_dof_velocity_target_tensor(action)
         self.simulation.step()
+        
+        return action
 
     def update_objective(self, goal, mode):
         quaternions = self.yaw_to_quaternion(goal[2])

@@ -2,18 +2,19 @@ from control.mppiisaac.planner.isaacgym_wrapper import ActorWrapper     # type: 
 from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner       # type: ignore
 from control.mppiisaac.utils.config_store import ExampleConfig          # type: ignore
 
+from motion import Dingo
+from scheduler import Objective
+
 import rospy
 import roslib
+import torch
 import yaml
 
 import numpy as np
 
 from scipy.spatial.transform import Rotation
 from tf.transformations import euler_from_quaternion
-from nav_msgs.msg import Odometry
-
-from motion import Dingo
-from scheduler import Objective
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 
 class PhysicalWorld:
@@ -32,11 +33,14 @@ class PhysicalWorld:
         self.robot_R = None
         self.robot_q = None
         self.robot_q_dot = None
+        self.robot_prev_msg = None
+
+        self.is_goal_reached = False
 
     @classmethod
-    def build(cls, config: ExampleConfig, layout: str):
+    def build(cls, config: ExampleConfig, layout: str, robot_name: str):
         world = PhysicalWorld.create(config, layout)
-        world.configure()
+        world.configure(robot_name)
         return world
     
     @classmethod
@@ -55,9 +59,9 @@ class PhysicalWorld:
 
         return cls(params, config, objectives, controller)
 
-    def configure(self):
-        rospy.Subscriber("/optitrack_state_estimator/Dingo/state", Odometry, self._robot_state_cb, queue_size=1,)
-        rospy.wait_for_message('/optitrack_state_estimator/Dingo/state', Odometry, timeout=10)
+    def configure(self, robot_name):
+        rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
+        rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
 
     def create_additions(self):
         additions =[]
@@ -89,24 +93,46 @@ class PhysicalWorld:
         return additions
 
     def run(self):
-        action = self.controller.compute_action(self.robot_q, self.robot_q_dot)
-        action = self._world_to_robot_frame(np.array(action), self.robot_R)
+        if self.robot_q is not None:
+            action = self.controller.compute_action(self.robot_q, self.robot_q_dot)
+            action = self._world_to_robot_frame(np.array(action), self.robot_R)
 
-        lin_x, lin_y, ang_z = action[0], action[1], action[2]
-        self.robot.move(lin_x, lin_y, ang_z)
+            lin_x, lin_y, ang_z = action[0], action[1], action[2]
 
-    def _robot_state_cb(self, msg):
-        pos = msg.pose.pose.position
-        ori = msg.pose.pose.orientation
+            if not self.is_goal_reached:
+                self.robot.move(lin_x, lin_y, ang_z)
 
-        lin = msg.twist.twist.linear
-        ang = msg.twist.twist.angular
+    def _cb_robot_state(self, msg):
+        curr_pos = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
+        curr_ori = msg.pose.pose.orientation
 
-        _, _, yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
+        _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
-        self.robot_R = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
-        self.robot_q = np.array([pos.x, pos.y, yaw])
-        self.robot_q_dot = np.array([lin.x, lin.y, ang.z,])
+        if self.robot_prev_msg is not None:
+            prev_pos = np.array([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y])
+            prev_ori = self.robot_prev_msg.pose.pose.orientation
+
+            _, _, prev_yaw = euler_from_quaternion([prev_ori.x, prev_ori.y, prev_ori.z, prev_ori.w])
+
+            delta_t = msg.header.stamp.to_sec() - self.robot_prev_msg.header.stamp.to_sec()
+
+            linear_velocity = (curr_pos - prev_pos) / delta_t
+            angular_velocity = (curr_yaw - prev_yaw) / delta_t
+
+            self.robot_R = np.array([[np.cos(curr_yaw), -np.sin(curr_yaw)], [np.sin(curr_yaw), np.cos(curr_yaw)]])
+            self.robot_q = np.array([curr_pos[0], curr_pos[1], curr_yaw])
+            self.robot_q_dot = np.array([linear_velocity[0], linear_velocity[1], angular_velocity])
+
+            error_x, error_y, _ = np.abs(self.robot_q - self.objectives.goal_state)
+            if error_x < 0.05 and error_y < 0.05:
+                rospy.loginfo_once(f"Goal succeeded, Ex: {error_x} and Ey: {error_y}")
+                self.is_goal_reached = True 
+
+        else:
+            goal = torch.tensor([*curr_pos, 0., curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
+            self.controller.update_objective_goal(goal)
+
+        self.robot_prev_msg = msg
 
     @staticmethod
     def _world_to_robot_frame(action, robot_R):
