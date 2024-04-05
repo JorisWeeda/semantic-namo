@@ -162,7 +162,6 @@ catkin_install_python(PROGRAMS
   scripts/collector
   scripts/controller
   scripts/environment
-  scripts/mimic_topic
   scripts/visualisation
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
