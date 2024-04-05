@@ -1,14 +1,13 @@
 <launch>
     <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
     
+    <arg name="robot_name" default="dingo2" />
     <arg name="config" default="config_dingo_push" />
     <arg name="layout" default="empty" />
 
     <arg name="is_simulation" default="true" />
-    <arg name="run_frequency" default="30" />
+    <arg name="run_frequency" default="20" />
     
-    <node name="mimic_topic" pkg="semantic_namo" type="mimic_topic" output="screen" launch-prefix="$(arg venv)" />
-
     <group if="$(eval is_simulation)">
         <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
             <param name="config" value="$(arg config)" />
@@ -18,16 +17,25 @@
 
     <group unless="$(eval is_simulation)">
         <node name="visualisation" pkg="semantic_namo" type="visualisation" output="screen" launch-prefix="$(arg venv)" >
-            <param name="run_frequency" value="$(arg run_frequency)" />
+            <param name="robot_name" value="$(arg robot_name)" />
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
-    </node>
+        </node>
+
+        <include file="$(find vicon_bridge)/launch/vicon.launch">
+            <arg name="only_use_object_specific" default="true"/>
+            <arg name="object_names" value="[$(arg robot_name)]"/>
+            <arg name="object_msg_types" value="[geometry_msgs/PoseWithCovarianceStamped]"/>
+            <arg name="object_frame_ids" value="[map]"/>
+            <arg name="object_publish_topics" value="[/vicon/$(arg robot_name)]"/>
+            <arg name="object_frequency_divider" value="[1]"/>
+          </include>
     </group>
 
     <node name="environment" pkg="semantic_namo" type="environment" output="screen" required="true" launch-prefix="$(arg venv)">
         <param name="is_simulation" value="$(arg is_simulation)" />
-        <param name="run_frequency" value="$(arg run_frequency)" />
+        <param name="robot_name" value="$(arg robot_name)" />
         <param name="config" value="$(arg config)" />
         <param name="layout" value="$(arg layout)" />
-</node>
+    </node>
 </launch>

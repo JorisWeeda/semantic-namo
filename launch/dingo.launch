@@ -1,7 +1,0 @@
-<launch>
-    <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
-
-    <node name="node_client" pkg="semantic_namo" type="node_client" output="screen" launch-prefix="$(arg venv)" />
-
-    <node name="node_server" pkg="semantic_namo" type="node_server" output="screen" launch-prefix="$(arg venv)" />
-  </launch>

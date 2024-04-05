@@ -11,19 +11,16 @@ if __name__ == "__main__":
 
     rospy.loginfo(f'Creating visualizer for the physical world.')
 
-    run_frequency = rospy.get_param('~run_frequency')
+    robot_name = rospy.get_param('~robot_name') 
     config = rospy.get_param('~config')
     layout = rospy.get_param('~layout')
 
     hydra.initialize(config_path="../config", version_base=None)
     hydra_config = hydra.compose(config)
 
-    viewer = Viewer.build(hydra_config, layout)
+    viewer = Viewer.build(hydra_config, layout, robot_name)
 
-    rate = rospy.Rate(run_frequency)
     while not rospy.is_shutdown():
         viewer.run()
-
-        rate.sleep()
 
     viewer.destroy()
