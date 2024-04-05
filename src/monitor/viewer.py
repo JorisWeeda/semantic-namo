@@ -8,7 +8,7 @@ import yaml
 import numpy as np
 
 from tf.transformations import euler_from_quaternion
-from nav_msgs.msg import Odometry
+from geometry_msgs.msg import PoseWithCovarianceStamped
 
 from isaacgym import gymapi
 
@@ -26,9 +26,9 @@ class Viewer:
         self.robot_q = None
 
     @classmethod
-    def build(cls, config: ExampleConfig, layout: str):
+    def build(cls, config: ExampleConfig, layout: str, robot_name: str):
         viewer = cls.create(config, layout)
-        viewer.configure()
+        viewer.configure(robot_name)
         return viewer
 
     @classmethod
@@ -53,9 +53,9 @@ class Viewer:
 
         return cls(params, config, simulation)
     
-    def configure(self):
-        rospy.Subscriber("/optitrack_state_estimator/Dingo/state", Odometry, self._robot_state_cb, queue_size=1,)
-        rospy.wait_for_message('/optitrack_state_estimator/Dingo/state', Odometry, timeout=10)
+    def configure(self, robot_name):
+        rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
+        rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
 
         cam_pos = self.params["camera"]["pos"]
         cam_tar = self.params["camera"]["tar"]
@@ -73,15 +73,10 @@ class Viewer:
     def set_viewer(gym, viewer, position, target):
         gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
 
-    def _robot_state_cb(self, msg):
-        pos = msg.pose.pose.position
-        ori = msg.pose.pose.orientation
+    def _cb_robot_state(self, msg):
+        curr_pos = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
+        curr_ori = msg.pose.pose.orientation
 
-        lin = msg.twist.twist.linear
-        ang = msg.twist.twist.angular
+        _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
-        _, _, yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
-
-        self.robot_R = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
-        self.robot_q = np.array([pos.x, pos.y, yaw])
-        self.robot_q_dot = np.array([lin.x, lin.y, ang.z,])
+        self.robot_q = np.array([curr_pos[0], curr_pos[1], curr_yaw])
