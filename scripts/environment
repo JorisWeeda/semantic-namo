@@ -2,24 +2,17 @@
 import os
 os.environ['APPDATA'] = ""
 
-import io
 import hydra
-import random
 import rospy
+import random
 import time
 import pandasgui
 
+import numpy as np
+
 from environment import SimulateWorld, PhysicalWorld
+from scheduler import Scheduler
 from monitor import Monitor
-
-import torch
-
-
-def torch_to_bytes(t: torch.Tensor) -> bytes:
-    buff = io.BytesIO()
-    torch.save(t, buff)
-    buff.seek(0)
-    return buff.read()
 
 
 if __name__ == "__main__":
@@ -38,36 +31,42 @@ if __name__ == "__main__":
     if is_simulation:
         rospy.loginfo(f'Running simulate world with configuration: {config} and world: {layout}')
         world = SimulateWorld.build(hydra_config, layout)
-        monitor.configure_simulate_monitor()
+        monitor.configure_simulate_monitor(world.simulation)
     else:
         rospy.loginfo(f'Running physical world with configuration: {config} and world: {layout}')
         world = PhysicalWorld.build(hydra_config, layout, robot_name)
         monitor.configure_physical_monitor(robot_name)
+
+    scheduler = Scheduler.create_scheduler(layout)
 
     start_time = time.time()
     set_command = True
 
     monitor.start_monitoring()
     while not rospy.is_shutdown():
-        iteration_start_time = time.time()
+        loop_start_time = time.time()
 
-        if (time.time() - start_time >= 5) and set_command:
-            goal = torch.tensor([0.5, 0., 0., 0., 0., 0., 1.])
-            goal = torch_to_bytes(goal)
+        if (time.time() - start_time >= 5) and world.is_goal_reached and set_command:
+            # scheduler.generate_path(world.simulation)
 
-            world.controller.update_objective_goal(goal)
-            world.is_goal_reached = False
+            random_x = random.uniform(0, 1.5)
+            random_y = random.uniform(-1.5, 1.5)
+            random_yaw = random.uniform(-np.pi, np.pi)
 
-            random_x = random.uniform(-2, 2)
-            random_y = random.uniform(-2, 2)
+            goal = np.array([0., 0., 0.])
+            mode = np.array([0., 0.])
+
+            world.update_objective(goal, mode)
             set_command = False
 
         action = world.run()
 
-        if is_simulation and action is not None:
-            monitor.cb_simulate(world.simulation, action)
+        monitor.step_monitoring()
 
-        if (time.time() - start_time >= 30):
+        if is_simulation and action is not None:
+            monitor.cb_simulate(world.simulation, action.numpy())
+
+        if (time.time() - start_time >= 20) and world.is_goal_reached:
             break
 
     if is_simulation:
