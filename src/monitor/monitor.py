@@ -25,7 +25,9 @@ class Monitor:
         self.active_monitor = False
 
         self._prev_msg_robot_state = None
+        self._prev_elapsed_cb_time = None
 
+        self.rate_loop = {"t": [], "duration": []}
         self.rob_state = {"t": [], "x": [], "y": [], "yaw": []}
         self.rob_twist = {"t": [], "x_d": [], "y_d": [], "yaw_d": []}
 
@@ -50,15 +52,32 @@ class Monitor:
 
         rospy.Subscriber('/cmd_vel', Twist, self.cb_cmd_vel)
 
-    def configure_simulate_monitor(cls):
-        pass
+    def configure_simulate_monitor(cls, sim):
+        for actor in range(1, len(sim.env_cfg)):
+            actor_wrapper = sim.env_cfg[actor]
+
+            mass = cls.get_sim_actor_mass(sim, actor)
+            name = cls.get_sim_actor_name(sim, actor)
+
+            rospy.loginfo(f'Actor: {actor}, name: {name}, mass: {mass}, size: {actor_wrapper.size}, fixed: {actor_wrapper.fixed}')        
 
     def start_monitoring(self):
+        self._prev_elapsed_cb_time = float(0)
         self.start_time = rospy.get_time()
         self.active_monitor = True
 
     def stop_monitoring(self):
         self.active_monitor = False
+
+    def step_monitoring(self):
+        if self.active_monitor:
+            elapsed_time = rospy.get_time() - self.start_time
+            duration = elapsed_time - self._prev_elapsed_cb_time
+
+            self.rate_loop["t"].append(elapsed_time)
+            self.rate_loop["duration"].append(duration)
+
+            self._prev_elapsed_cb_time = elapsed_time
 
     def cb_simulate(self, sim, cmd_vel):
         if self.active_monitor:
@@ -196,18 +215,14 @@ class Monitor:
         state_d = torch.cat((sim.dof_state[:, 1].unsqueeze(1), sim.dof_state[:, 3].unsqueeze(1), sim.dof_state[:, 5].unsqueeze(1)), 1)[0].numpy()
         return state_d
 
-    @property
-    def data(self):
-        return {
-            "robot_state": pd.DataFrame(self.rob_state),
-            "robot_twist": pd.DataFrame(self.rob_twist),
-            "joint_position": pd.DataFrame(self.joint_pos),
-            "joint_velocity": pd.DataFrame(self.joint_vel),
-            "joint_effort": pd.DataFrame(self.joint_eff),
-            "wheel_current": pd.DataFrame(self.wheel_cur),
-            "wheel_voltage": pd.DataFrame(self.wheel_vol),
-            "twist_command": pd.DataFrame(self.twist_cmd),
-            "robot_energy": pd.DataFrame(self.rob_energy)}
+    @staticmethod
+    def get_sim_actor_mass(sim, actor):
+        rigid_body_property = sim.gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
+        return rigid_body_property.mass
+
+    @staticmethod
+    def get_sim_actor_name(sim, actor):
+        return sim.gym.get_actor_name(sim.envs[0], actor)
 
     @property
     def rob_energy(self):
@@ -230,3 +245,17 @@ class Monitor:
                 'cumsum_power': cumulative_power.tolist(),
                 'cumsum_current': cumulative_current.tolist(),
                 'cumsum_voltage': cumulative_voltage.tolist()}
+
+    @property
+    def data(self):
+        return {
+            "rate_loop": pd.DataFrame(self.rate_loop),
+            "robot_state": pd.DataFrame(self.rob_state),
+            "robot_twist": pd.DataFrame(self.rob_twist),
+            "joint_position": pd.DataFrame(self.joint_pos),
+            "joint_velocity": pd.DataFrame(self.joint_vel),
+            "joint_effort": pd.DataFrame(self.joint_eff),
+            "wheel_current": pd.DataFrame(self.wheel_cur),
+            "wheel_voltage": pd.DataFrame(self.wheel_vol),
+            "twist_command": pd.DataFrame(self.twist_cmd),
+            "robot_energy": pd.DataFrame(self.rob_energy)}

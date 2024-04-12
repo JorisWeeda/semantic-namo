@@ -47,9 +47,15 @@ class Viewer:
             device=config["mppi"].device,
         )
 
-        world_config = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
-        with open(world_config, "r") as stream:
-            params = yaml.safe_load(stream)
+        base_config_file_path = f'{cls.PKG_PATH}/config/worlds/base.yaml'
+        with open(base_config_file_path, 'r') as stream:
+            base_config =  yaml.safe_load(stream)
+
+        world_config_file_path = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
+        with open(world_config_file_path, 'r') as stream:
+            world_config =  yaml.safe_load(stream)
+
+        params = {**base_config, **world_config}
 
         return cls(params, config, simulation)
     
@@ -69,10 +75,6 @@ class Viewer:
         self.simulation.gym.destroy_viewer(self.simulation.viewer)
         self.simulation.gym.destroy_sim(self.simulation.sim)
 
-    @staticmethod
-    def set_viewer(gym, viewer, position, target):
-        gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
-
     def _cb_robot_state(self, msg):
         curr_pos = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
         curr_ori = msg.pose.pose.orientation
@@ -80,3 +82,7 @@ class Viewer:
         _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
         self.robot_q = np.array([curr_pos[0], curr_pos[1], curr_yaw])
+
+    @staticmethod
+    def set_viewer(gym, viewer, position, target):
+        gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
