@@ -1,68 +1,8 @@
-name: "Blockage"
+name: "Transfer"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
-camera:
-    pos: [0, -6, 5]
-    tar: [0, 0, 0]
-
-scheduler:
-    step: 0.1
-    goal: [2.5, -2.5]
-
-objects:
-    wall:
-        type: "box"
-        color: [0.0, 0.2, 0.4]
-        collision: False
-        fixed: True
-    chair:
-        type: "box"
-        size: [0.500, 0.500, 0.700]
-        friction: 0.300
-        mass: 8.00
-        color: [0.9, 0.2, 0.0]
-        noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
-        noise_percentage_mass: 0.3
-        fixed: False
-        collision: True
-    chaise:
-        type: "box"
-        size: [0.500, 0.500, 0.700]
-        friction: 0.300
-        mass: 20.00
-        color: [0.6, 0.2, 0.0]
-        noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
-        noise_percentage_mass: 0.3
-        fixed: False
-        collision: True
-    table:
-        type: "box"
-        size: [0.800, 1.600, 0.600]
-        friction: 0.300
-        mass: 40.00
-        color: [0.2, 0.8, 0.0]
-        noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
-        noise_percentage_mass: 0.3
-        fixed: False
-        collision: True
-    bookcase:
-        type: "box"
-        size: [0.800, 0.600, 1.800]
-        friction: 0.300
-        mass: 30.00
-        color: [0.2, 0.2, 0.8]
-        noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
-        noise_percentage_mass: 0.3
-        fixed: False
-        collision: True
 
 environment:
-    size: [6, 6]
-
     demarcation:
         - wall:
             name: "f-demarcation-wall"

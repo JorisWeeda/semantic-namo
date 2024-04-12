@@ -3,10 +3,14 @@ from control.mppiisaac.utils.config_store import ExampleConfig                  
 
 import io
 import math
+import random
 import roslib
+import rospy
 import torch
 import yaml
 import zerorpc
+
+import numpy as np
 
 from scipy.spatial.transform import Rotation
 from tf.transformations import quaternion_from_euler
@@ -24,6 +28,14 @@ class SimulateWorld:
 
         self.params = params
         self.config = config
+
+        self.pos_tolerance = params['controller']['pos_tolerance']
+        self.yaw_tolerance = params['controller']['yaw_tolerance']
+
+        self._goal = None
+        self._mode = None
+
+        self.is_goal_reached = False
 
     @classmethod
     def build(cls, config: ExampleConfig, layout: str):
@@ -47,9 +59,15 @@ class SimulateWorld:
             device=config["mppi"].device,
         )
 
-        world_config = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
-        with open(world_config, "r") as stream:
-            params = yaml.safe_load(stream)
+        base_config_file_path = f'{cls.PKG_PATH}/config/worlds/base.yaml'
+        with open(base_config_file_path, 'r') as stream:
+            base_config =  yaml.safe_load(stream)
+
+        world_config_file_path = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
+        with open(world_config_file_path, 'r') as stream:
+            world_config =  yaml.safe_load(stream)
+
+        params = {**base_config, **world_config}
 
         controller = zerorpc.Client()
         controller.connect("tcp://127.0.0.1:4242")
@@ -63,7 +81,7 @@ class SimulateWorld:
         self.controller.add_to_env(additions)
 
         init_state = self.params["environment"]["robot"]["init_state"]
-        (x, y, yaw) = init_state[0], init_state[1], self.degrees_to_radians(init_state[1])
+        (x, y, yaw) = init_state[0], init_state[1], init_state[2] * (math.pi / 180.0)
 
         self.simulation.set_dof_state_tensor(torch.tensor([x, 0., y, 0., yaw, 0.]))
         self.update_objective((x, y, yaw), (0., 0.))
@@ -74,6 +92,9 @@ class SimulateWorld:
 
     def create_additions(self):
         additions =[]
+
+        range_x = self.params['range_x']
+        range_y = self.params['range_y']
 
         if self.params["environment"].get("demarcation", None):
             for wall in self.params["environment"]["demarcation"]:
@@ -94,8 +115,20 @@ class SimulateWorld:
 
                 obstacle = {**obs_args, **obstacle[obs_type]}
 
-                rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
-                obstacle["init_ori"] = list(rot)
+                init_ori = obstacle.get("init_ori", None)
+                init_pos = obstacle.get("init_pos", None)
+
+                random_yaw = random.uniform(0, 360)
+                random_x = random.uniform(*range_x)
+                random_y = random.uniform(*range_y)
+
+                init_ori = init_ori if init_ori else [0., 0. , random_yaw]
+                init_pos = init_pos if init_pos else [random_x, random_y, 0.5]
+
+                init_ori = Rotation.from_euler('xyz', init_ori, degrees=True).as_quat().tolist()
+                
+                obstacle["init_ori"] = init_ori
+                obstacle["init_pos"] = init_pos
 
                 additions.append(obstacle)
 
@@ -113,19 +146,29 @@ class SimulateWorld:
         if torch.any(torch.isnan(action)):
             action = torch.zeros_like(action)
 
-        self.simulation.set_dof_velocity_target_tensor(action)
+        self.check_goal_reached()
+        if self.is_goal_reached:
+            rospy.loginfo_throttle(1, 'The goal is reached, no action applied to the robot')
+
+        self.simulation.set_dof_velocity_target_tensor(action)        
         self.simulation.step()
         
         return action
 
     def update_objective(self, goal, mode):
-        quaternions = self.yaw_to_quaternion(goal[2])
+        self._goal = goal
+        self._mode = mode
 
+        quaternions = self.yaw_to_quaternion(goal[2])
         tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions],)
         tensor_mode = torch.tensor([mode[0], mode[1]])
         
         self.controller.update_objective_goal(self.torch_to_bytes(tensor_goal))
+        rospy.loginfo(f"Objective has new goal set : {tensor_goal}")
+        rospy.loginfo(f"Objective expressed as state : {goal}")
+
         self.controller.update_objective_mode(self.torch_to_bytes(tensor_mode))
+        rospy.loginfo(f"Objective has new mode set : {tensor_mode}")
 
     def get_elapsed_time(self):
         return self.simulation.gym.get_elapsed_time(self.simulation.sim)
@@ -134,13 +177,28 @@ class SimulateWorld:
         self.simulation.gym.destroy_viewer(self.simulation.viewer)
         self.simulation.gym.destroy_sim(self.simulation.sim)
 
+    def check_goal_reached(self):
+        if self._goal is None:
+            return None
+
+        rob_dof = self.simulation.dof_state[0]
+        
+        rob_pos = np.array([rob_dof[0], rob_dof[2]])
+        rob_yaw = np.array([rob_dof[4]])
+        
+        goal_pos = np.array(self._goal[:2])
+        goal_yaw = np.array(self._goal[2])
+
+        distance = np.linalg.norm(rob_pos - goal_pos)
+        error_yaw = np.abs(rob_yaw - goal_yaw)
+
+        self.is_goal_reached = False
+        if distance < self.pos_tolerance and error_yaw < self.yaw_tolerance:
+            self.is_goal_reached = True
+
     @staticmethod
     def set_viewer(gym, viewer, position, target):
         gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
-
-    @staticmethod
-    def degrees_to_radians(degrees):
-        return degrees * (math.pi / 180.0)
 
     @staticmethod
     def yaw_to_quaternion(yaw):

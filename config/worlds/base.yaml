@@ -1,14 +1,20 @@
-name: "Avoidance"
-description: "Navigation Among Movable Obstacles: Simulated Approach"
+range_x: [-6., 6.]
+range_y: [-6., 6.]
 
 camera:
-    pos: [0, -6, 5]
-    tar: [0, 0, 0]
+    pos: [-6., 0., 5.]
+    tar: [0., 0., 0.]
 
 scheduler:
     step: 0.1
-    goal: [2.5, 0.0]
+    goal: [4.0, 4.0]
+    mass_threshold: 10.0 
+    path_inflation: 0.5
 
+controller:
+    pos_tolerance: 0.1  # meters
+    yaw_tolerance: 0.1  # radian
+ 
 objects:
     wall:
         type: "box"
@@ -59,39 +65,3 @@ objects:
         noise_percentage_mass: 0.3
         fixed: False
         collision: True
-
-environment:
-    size: [6, 6]
-
-    demarcation:
-        - wall:
-            name: "f-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [0.0, 3.2, 0.0]
-            init_ori: [0.0, 0.0, 0.0]
-        - wall:
-            name: "b-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [0.0, -3.2, 0.0]
-            init_ori: [0.0, 0.0, 0.0]
-        - wall:
-            name: "l-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [-3.2, 0.0, 0.0]
-            init_ori: [0.0, 0.0, 90.0]
-        - wall:
-            name: "r-demarcation-wall"
-            size: [6.0, 0.2, 0.5]
-            init_pos: [3.2, 0.0, 0.0]
-            init_ori: [0.0, 0.0, 90.0]
-
-
-    obstacles:
-        - chair:
-            name: "Chair 1"
-            init_pos: [1.0, 0.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-
-
-    robot:
-        init_state: [0.0, 0.0, 0.0]
