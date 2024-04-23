@@ -1,54 +1,72 @@
-from isaacgym import gymapi
 
 import torch
 import quaternionic
+from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
 import numpy as np
 
-from tf.transformations import euler_from_quaternion
-from semantic_namo.cfg import DingoCostConfig
 
 
 class Objective:
-    def __init__(self):
-        self.mode = torch.tensor([0., 0.])   # [transit(0)/transfer(1), block_index]
+    def __init__(self, u_min, u_max):
+        self.init = torch.tensor([0., 0., 0., 0., 0., 0.])
         self.goal = torch.tensor([0., 0., 0., 0., 0., 0., 1.])
+        self.mode = torch.tensor([0., 0.])
+
+        self.u_min = torch.Tensor(u_min)
+        self.u_max = torch.Tensor(u_max)
 
         self.w_con = np.diag([1.0, 1.0, 1.0])
-        self.w_dis = 200.0
+        self.w_dis = 30.0
         self.w_rot = 5.0
-        self.w_int = 1.0
+        self.w_int = 5.0
+
+    def reset(self):
+        pass
 
     def compute_cost(self, sim, u):
         cost_distance_to_goal = self.w_dis * self._distance_to_goal(sim)
         cost_rotation_to_goal = self.w_rot * self._rotation_to_goal(sim)
         cost_interact_to_goal = self.w_int * self._interact_to_goal(sim)
 
-        cost_input_weight_mat = torch.sum((u @ self.w_con) * u, dim=1)
+        cost_high_control_vec = self._cost_control_vec(u)
 
         total_cost = cost_distance_to_goal + \
                      cost_rotation_to_goal + \
                      cost_interact_to_goal + \
-                     cost_input_weight_mat
+                     cost_high_control_vec
         
         return total_cost
 
-    def _distance_to_goal(self, sim):
-        rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
+    def _cost_control_vec(self, u):
+        normalized_u = (u - self.u_min) / (self.u_max - self.u_min)
+        
+        cost_control_vec_per_env = torch.sum((normalized_u @ self.w_con) * normalized_u, dim=1)
+        return cost_control_vec_per_env
 
-        distance_per_env =  torch.linalg.norm(rob_pos - self.goal[:2], axis=1)
-        return distance_per_env
+    def _distance_to_goal(self, sim):
+        current_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
+        initial_rob_pos = torch.Tensor([self.init[0], self.init[2]])
+        
+        initial_distance =  torch.linalg.norm(initial_rob_pos - self.goal[:2])
+        distance_per_env =  torch.linalg.norm(current_rob_pos - self.goal[:2], axis=1)
+
+        distance_norm_per_env = distance_per_env / initial_distance
+        return distance_norm_per_env
 
     def _rotation_to_goal(self, sim):
         goal_quaternion = quaternionic.array(self.goal[3:])
         envs_quaternion = quaternionic.array(sim.rigid_body_state[:, 3, 3:7])
 
-        rotation_per_env = quaternionic.distance.rotation.intrinsic(envs_quaternion, goal_quaternion)
-        return rotation_per_env
+        rotation_norm_per_env = quaternionic.distance.rotation.intrinsic(envs_quaternion, goal_quaternion)
+        return torch.Tensor(rotation_norm_per_env)
 
     def _interact_to_goal(self, sim):
-        net_contact_forces = torch.sum(torch.abs(torch.cat((sim.net_cf[:, 0].unsqueeze(1), sim.net_cf[:, 1].unsqueeze(1)), 1)), 1)
-        reshaped_contact_forces = net_contact_forces.reshape([sim.num_envs, sim.num_bodies])
+        net_contact_forces = torch.sum(torch.abs(torch.cat((sim.net_contact_force[:, 0].unsqueeze(1), sim.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
+        number_of_bodies = int(net_contact_forces.size(dim=0) / sim.num_envs)
 
-        collision_cost_per_env = torch.sum(reshaped_contact_forces, dim=1)
-        return collision_cost_per_env
+        reshaped_contact_forces = net_contact_forces.reshape([sim.num_envs, number_of_bodies])
+        interaction_per_env = torch.sum(reshaped_contact_forces, dim=1)
+
+        interaction_norm_per_env = interaction_per_env / (torch.max(interaction_per_env) + 1)
+        return interaction_norm_per_env
