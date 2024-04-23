@@ -30,12 +30,12 @@ environment:
             name: "Chair 1"
             init_pos: [-0.4, -2.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
-        - chair:
-            name: "Chair 2"
-            init_pos: [0.4, -2.0, 0.1]
-            init_ori: [0.0, 0.0, 0.0]
         - chaise:
             name: "Chaise 1"
+            init_pos: [0.4, -2.0, 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+        - chair:
+            name: "Chaire 2"
             init_pos: [-0.4, 1.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chaise:
@@ -44,4 +44,4 @@ environment:
             init_ori: [0.0, 0.0, 0.0]
 
     robot:
-        init_state: [0.0, -3, 0.0]
+        init_state: [0.0, -3, 90.0]

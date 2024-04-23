@@ -6,10 +6,11 @@ camera:
     tar: [0., 0., 0.]
 
 scheduler:
-    step: 0.1
-    goal: [4.0, 4.0]
+    step: 0.5
+    goal: [0.0, 3.0]
     mass_threshold: 10.0 
-    path_inflation: 0.5
+    path_inflation: 0.3
+    path_step_size: 0.1
 
 controller:
     pos_tolerance: 0.1  # meters
@@ -19,13 +20,15 @@ objects:
     wall:
         type: "box"
         color: [0.0, 0.2, 0.4]
-        collision: False
+        collision: True
+        friction: 1.00
+        mass: 1000.00
         fixed: True
     chair:
         type: "box"
         size: [0.500, 0.500, 0.700]
         friction: 0.300
-        mass: 8.00
+        mass: 5.00
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
         noise_percentage_friction: 0.3

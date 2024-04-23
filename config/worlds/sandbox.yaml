@@ -50,15 +50,15 @@ environment:
             init_pos: [-4.0, 3.5, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chair:
-            name: "Chair 4"
+            name: "Chair 5"
             init_pos: [-4.0, -3.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chair:
-            name: "Chair 5"
+            name: "Chair 6"
             init_pos: [-3.0, -3.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - chair:
-            name: "Chair 6"
+            name: "Chair 7"
             init_pos: [-3.0, -4.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
 
