@@ -4,36 +4,33 @@ import torch
 import numpy as np
 import networkx as nx
 
-import matplotlib.pyplot as plt
-
-from matplotlib.patches import Polygon as MatPlotPolygon
 from shapely.geometry import Point, LineString, Polygon
 
 
 class Planner:
-    def __init__(self, range_x, range_y, mass_threshold, path_inflation):
+    def __init__(self, range_x, range_y, mass_threshold, path_inflation, path_step_size):
         self.range_x = range_x
         self.range_y = range_y
 
         self.mass_threshold = mass_threshold
         self.path_inflation = path_inflation
+        self.path_step_size = path_step_size
     
     def graph(self, sim, goal, margin=0.01):
-        adjustable_polygons, stationary_polygons = self.generate_polygons(sim)
-        
-        if stationary_polygons:
-            nodes = self.generate_nodes(stationary_polygons)
-        
+        shapes, masses = self.generate_polygons(sim)
+        stationary_polygons = [polygon for name, polygon in shapes.items() if masses[name] >= self.mass_threshold]
+
+        nodes = self.generate_nodes(stationary_polygons)
+
         start = self.get_robot_pos(sim)
         nodes = np.vstack((start, nodes))
         nodes = np.vstack((nodes, goal))
-        
-        inflation = self.path_inflation - margin 
 
-        _, stationary_polygons = self.generate_polygons(sim, inflation)
+        shapes, masses = self.generate_polygons(sim, self.path_inflation - margin)
+        stationary_polygons = [polygon for name, polygon in shapes.items() if masses[name] >= self.mass_threshold]
+
         edges = self.generate_edges(nodes, stationary_polygons)
 
-        # ------------------------------------
         graph = nx.Graph()
         for i, (x, y) in enumerate(nodes):
             graph.add_node(i, pos=(x, y))
@@ -44,51 +41,16 @@ class Planner:
         shortest_path = nx.shortest_path(graph, source=0, target=len(nodes)-1, weight='length')
         shortest_path_edges = [(shortest_path[i], shortest_path[i+1]) for i in range(len(shortest_path)-1)]
 
+        barrier = self.filter_barriers(nodes, shortest_path_edges, shapes)
+        shapes, masses = self.generate_polygons(sim, 0.)
 
-        blocking_obstacles = []
-        for edge in shortest_path_edges:
-            node_i, node_j = nodes[int(edge[0])], nodes[int(edge[1])]
-            edge_line = LineString([node_i, node_j])
-            for polygon in adjustable_polygons:
-                if edge_line.intersects(polygon):
-                    blocking_obstacles.append(polygon)
-  
-        _, ax = plt.subplots()
-        ax.set_aspect('equal', 'box')
-
-        ax.scatter(nodes[:, 0], nodes[:, 1], color='green')
-
-        for polygon in stationary_polygons:
-            patch = MatPlotPolygon([(point[0], point[1]) for point in polygon.exterior.coords], color='black', lw=1, alpha=0.5)
-            ax.add_patch(patch)
-
-        for polygon in blocking_obstacles:
-            patch = MatPlotPolygon([(point[0], point[1]) for point in polygon.exterior.coords], color='orange', lw=1, alpha=0.5)
-            ax.add_patch(patch)
-
-        for edge in edges:
-            node_i, node_j = nodes[int(edge[0])], nodes[int(edge[1])]
-            ax.plot([node_i[0], node_j[0]], [node_i[1], node_j[1]], color='blue', linewidth=0.1)
-
-        for edge in shortest_path_edges:
-            node_i, node_j = nodes[int(edge[0])], nodes[int(edge[1])]
-            ax.plot([node_i[0], node_j[0]], [node_i[1], node_j[1]], color='green', linewidth=3)
-
-        ax.autoscale_view()
-        ax.set_title("Environment with Obstacles and Robot")
-        ax.grid(True)
-
-        plt.show()
-
-        # ------------------------------------
-
-        return nodes, edges, stationary_polygons
+        return shortest_path, nodes, edges, shapes, masses, barrier
 
     def generate_polygons(self, sim, inflation=None, threshold=None):
         inflation = self.path_inflation if inflation is None else inflation
         threshold = self.mass_threshold if threshold is None else threshold
 
-        lower_polygons, higher_polygons = [], []
+        masses, shapes = {}, {}
         for actor in range(1, len(sim.env_cfg)):
             actor_wrapper = sim.env_cfg[actor]
 
@@ -108,25 +70,28 @@ class Planner:
                                         [np.sin(obs_rot), np.cos(obs_rot)]])
 
             rotate_corners = np.dot(corners, rotation_matrix)
-            translate_corners = rotate_corners + obs_pos
+            translate_corners = np.add(rotate_corners, obs_pos)
+            
+            mass = self.get_actor_mass(sim, actor)
+            name = self.get_actor_name(sim, actor)
+            
+            shapes[name] = Polygon(translate_corners)
+            masses[name] = mass
 
-            if self.get_actor_mass(sim, actor) < threshold:
-                lower_polygons.append(Polygon(translate_corners))
-            else:
-                higher_polygons.append(Polygon(translate_corners))
-
-        return lower_polygons, higher_polygons
+        return shapes, masses
 
     def generate_nodes(self, polygons):
         nodes = np.empty((0, 2), dtype='float')
 
-        corner_points = self.get_corner_points(polygons)
-        nodes = np.vstack((nodes, corner_points))
+        if polygons:
+            corner_points = self.get_corner_points(polygons, self.range_x, self.range_y)
+            nodes = np.vstack((nodes, corner_points))
 
-        intersect_points = self.get_intersection_points(polygons)
-        nodes = np.vstack((nodes, intersect_points))
+            intersect_points = self.get_intersection_points(polygons)
+            nodes = np.vstack((nodes, intersect_points))
 
-        nodes = self.filter_nodes(nodes, polygons)
+            nodes = self.filter_nodes(nodes, polygons)
+
         return nodes
     
     def generate_edges(self, nodes, polygons):
@@ -140,17 +105,19 @@ class Planner:
                         edges = np.vstack((edges, [int(i), int(j), edge_line.length]))
         return edges
 
-    def get_corner_points(self, polygons):
+    @staticmethod
+    def get_corner_points(polygons, x_limit, y_limit):
         corner_nodes = []
         for polygon in polygons:
             for corner in polygon.exterior.coords[:-1]:
-                if self.range_x[0] < corner[0] < self.range_x[1]:
-                    if self.range_y[0] < corner[1] < self.range_y[1]:
+                if x_limit[0] < corner[0] < x_limit[1]:
+                    if y_limit[0] < corner[1] < y_limit[1]:
                         corner_nodes.append(corner)
 
         return np.array(corner_nodes)
 
-    def get_intersection_points(self, polygons):
+    @staticmethod
+    def get_intersection_points(polygons):
         intersection_points = []
         for i, polygon_i in enumerate(polygons):
             for j, polygon_j in enumerate(polygons):
@@ -164,7 +131,8 @@ class Planner:
                         intersection_points.extend([[point[0], point[1]] for point in intersection.exterior.coords])
         return np.array(intersection_points)
 
-    def filter_nodes(self, nodes, polygons, radius=0.1):
+    @staticmethod
+    def filter_nodes(nodes, polygons, radius=0.1):
         filtered_nodes = []
 
         for node in nodes:
@@ -183,23 +151,56 @@ class Planner:
         return np.array(filtered_nodes)
 
     @staticmethod
+    def filter_barriers(nodes, edges, shapes):
+        blocking_shapes = {}
+        for edge in edges:
+            node_i, node_j = nodes[int(edge[0])], nodes[int(edge[1])]
+            edge_line = LineString([node_i, node_j])
+
+            for name, polygon in shapes.items():
+                if edge_line.intersects(polygon):
+                    blocking_shapes[name] = polygon
+
+        barrier = []
+        visited = []
+
+        for name, polygon in blocking_shapes.items():
+            if name in visited:
+                continue
+
+            new_barrier = {name: polygon}
+            visited.append(name)
+
+            for nested_name, nested_polygon in blocking_shapes.items():
+                if name == nested_name:
+                    continue
+
+                if polygon.intersects(nested_polygon):
+                    new_barrier[nested_name] = nested_polygon
+                    visited.append(name)
+            
+            barrier.append(new_barrier)
+        return barrier
+
+    @staticmethod
     def get_actor_pos(sim, actor):
-        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        rb_state = sim._gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
         return np.array([rb_state["pose"]["p"]["x"], rb_state["pose"]["p"]["y"]], dtype=np.float32)
 
     @staticmethod
     def get_actor_yaw(sim, actor):
-        rb_state = sim.gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
+        rb_state = sim._gym.get_actor_rigid_body_states(sim.envs[0], actor, gymapi.STATE_ALL)[0]
         return gymapi.Quat.to_euler_zyx(rb_state["pose"]["r"])[-1]
 
     @staticmethod
     def get_actor_mass(sim, actor):
-        if sim.env_cfg[actor].fixed:
-            return float('inf')
+        rigid_body_property = sim._gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
+        return float('inf') if sim.env_cfg[actor].fixed else rigid_body_property.mass
 
-        rigid_body_property = sim.gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
-        return rigid_body_property.mass
-
+    @staticmethod
+    def get_actor_name(sim, actor):
+        return sim._gym.get_actor_name(sim.envs[0], actor)
+    
     @staticmethod
     def get_robot_pos(sim):
         rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
