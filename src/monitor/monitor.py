@@ -217,12 +217,12 @@ class Monitor:
 
     @staticmethod
     def get_sim_actor_mass(sim, actor):
-        rigid_body_property = sim.gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
+        rigid_body_property = sim._gym.get_actor_rigid_body_properties(sim.envs[0], actor)[0]
         return rigid_body_property.mass
 
     @staticmethod
     def get_sim_actor_name(sim, actor):
-        return sim.gym.get_actor_name(sim.envs[0], actor)
+        return sim._gym.get_actor_name(sim.envs[0], actor)
 
     @property
     def rob_energy(self):
