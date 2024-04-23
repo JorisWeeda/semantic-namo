@@ -1,5 +1,5 @@
-from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
-from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
+from control.mppi_isaac.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
 
 import io
 import math
@@ -45,15 +45,10 @@ class SimulateWorld:
 
     @classmethod
     def create(cls, config, layout):
-        actors=[]
-        for actor_name in config["actors"]:
-            with open(f'{cls.PKG_PATH}/config/actors/{actor_name}.yaml') as f:
-                actors.append(ActorWrapper(**yaml.load(f, Loader=yaml.SafeLoader)))
-
         simulation = IsaacGymWrapper(
             config["isaacgym"],
             init_positions=config["initial_actor_positions"],
-            actors=actors,
+            actors=config["actors"],
             num_envs=1,
             viewer=True,
             device=config["mppi"].device,
@@ -83,12 +78,12 @@ class SimulateWorld:
         init_state = self.params["environment"]["robot"]["init_state"]
         (x, y, yaw) = init_state[0], init_state[1], init_state[2] * (math.pi / 180.0)
 
-        self.simulation.set_dof_state_tensor(torch.tensor([x, 0., y, 0., yaw, 0.]))
+        self.simulation.set_actor_dof_state(torch.tensor([x, 0., y, 0., yaw, 0.]))
         self.update_objective((x, y, yaw), (0., 0.))
 
         cam_pos = self.params["camera"]["pos"]
         cam_tar = self.params["camera"]["tar"]
-        self.set_viewer(self.simulation.gym, self.simulation.viewer, cam_pos, cam_tar)
+        self.set_viewer(self.simulation._gym, self.simulation.viewer, cam_pos, cam_tar)
 
     def create_additions(self):
         additions =[]
@@ -135,13 +130,12 @@ class SimulateWorld:
         return additions
     
     def run(self):
-        df_state_tensor = self.torch_to_bytes(self.simulation.dof_state[0])
-        rt_state_tensor = self.torch_to_bytes(self.simulation.root_state[0])
-        rb_state_tensor = self.torch_to_bytes(self.simulation.rigid_body_state[0])
+        df_state_tensor = self.torch_to_bytes(self.simulation.dof_state)
+        rt_state_tensor = self.torch_to_bytes(self.simulation.root_state)
+        rb_state_tensor = self.torch_to_bytes(self.simulation.rigid_body_state)
 
-        self.controller.reset_rollout_sim(df_state_tensor, rt_state_tensor, rb_state_tensor)
-
-        action = self.bytes_to_torch(self.controller.command())
+        bytes_action = self.controller.compute_action_tensor(df_state_tensor, rt_state_tensor, rb_state_tensor)
+        action = self.bytes_to_torch(bytes_action)
 
         if torch.any(torch.isnan(action)):
             action = torch.zeros_like(action)
@@ -150,32 +144,45 @@ class SimulateWorld:
         if self.is_goal_reached:
             rospy.loginfo_throttle(1, 'The goal is reached, no action applied to the robot')
 
-        self.simulation.set_dof_velocity_target_tensor(action)        
+        self.simulation.apply_robot_cmd(action)        
         self.simulation.step()
-        
+
         return action
 
-    def update_objective(self, goal, mode):
+    def update_objective(self, goal, mode=(0, 0)):
         self._goal = goal
         self._mode = mode
 
         quaternions = self.yaw_to_quaternion(goal[2])
-        tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions],)
-        tensor_mode = torch.tensor([mode[0], mode[1]])
-        
-        self.controller.update_objective_goal(self.torch_to_bytes(tensor_goal))
-        rospy.loginfo(f"Objective has new goal set : {tensor_goal}")
-        rospy.loginfo(f"Objective expressed as state : {goal}")
 
-        self.controller.update_objective_mode(self.torch_to_bytes(tensor_mode))
-        rospy.loginfo(f"Objective has new mode set : {tensor_mode}")
+        tensor_init = self.simulation.dof_state[0]
+        tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions])
+        tensor_mode = torch.tensor([mode[0], mode[1]])
+
+        rospy.loginfo(f"New objective init: {tensor_init}")
+        rospy.loginfo(f"New objective goal: {tensor_goal}")
+        rospy.loginfo(f"New objective mode: {tensor_mode}")
+
+        bytes_init = self.torch_to_bytes(tensor_init)
+        bytes_goal = self.torch_to_bytes(tensor_goal)
+        bytes_mode = self.torch_to_bytes(tensor_mode)
+
+        self.controller.update_objective(bytes_init, bytes_goal, bytes_mode)
 
     def get_elapsed_time(self):
-        return self.simulation.gym.get_elapsed_time(self.simulation.sim)
+        return self.simulation._gym.get_elapsed_time(self.simulation.sim)
+
+    def get_rollouts(self):
+        return self.bytes_to_torch(self.controller.get_rollouts())
+
+    def get_states(self):
+        return self.bytes_to_torch(self.controller.get_states())
+
+    def get_best_state(self):
+        return self.bytes_to_torch(self.controller.get_n_best_samples())
 
     def destroy(self):
-        self.simulation.gym.destroy_viewer(self.simulation.viewer)
-        self.simulation.gym.destroy_sim(self.simulation.sim)
+        self.simulation.stop_sim()
 
     def check_goal_reached(self):
         if self._goal is None:
@@ -186,14 +193,11 @@ class SimulateWorld:
         rob_pos = np.array([rob_dof[0], rob_dof[2]])
         rob_yaw = np.array([rob_dof[4]])
         
-        goal_pos = np.array(self._goal[:2])
-        goal_yaw = np.array(self._goal[2])
-
-        distance = np.linalg.norm(rob_pos - goal_pos)
-        error_yaw = np.abs(rob_yaw - goal_yaw)
+        distance = np.linalg.norm(rob_pos - self._goal[:2])
+        rotation = np.abs(rob_yaw - self._goal[2])
 
         self.is_goal_reached = False
-        if distance < self.pos_tolerance and error_yaw < self.yaw_tolerance:
+        if distance < self.pos_tolerance and rotation < self.yaw_tolerance:
             self.is_goal_reached = True
 
     @staticmethod
@@ -215,3 +219,12 @@ class SimulateWorld:
     def bytes_to_torch(buffer):
         buff = io.BytesIO(buffer)
         return torch.load(buff)
+    
+    @property
+    def goal(self):
+        return self._goal
+    
+    @property
+    def mode(self):
+        return self._mode
+    

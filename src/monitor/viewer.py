@@ -1,5 +1,5 @@
-from control.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
-from control.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import IsaacGymWrapper, ActorWrapper    # type: ignore
+from control.mppi_isaac.mppiisaac.utils.config_store import ExampleConfig                          # type: ignore
 
 import rospy
 import roslib
@@ -33,15 +33,10 @@ class Viewer:
 
     @classmethod
     def create(cls, config, layout):
-        actors=[]
-        for actor_name in config["actors"]:
-            with open(f'{cls.PKG_PATH}/config/actors/{actor_name}.yaml') as f:
-                actors.append(ActorWrapper(**yaml.load(f, Loader=yaml.SafeLoader)))
-
         simulation = IsaacGymWrapper(
             config["isaacgym"],
             init_positions=config["initial_actor_positions"],
-            actors=actors,
+            actors=config["actors"],
             num_envs=1,
             viewer=True,
             device=config["mppi"].device,

@@ -1,6 +1,6 @@
-from control.mppiisaac.planner.isaacgym_wrapper import ActorWrapper     # type: ignore
-from control.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner       # type: ignore
-from control.mppiisaac.utils.config_store import ExampleConfig          # type: ignore
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper     # type: ignore
+from control.mppi_isaac.mppiisaac.planner.mppi_isaac import MPPIisaacPlanner       # type: ignore
+from control.mppi_isaac.mppiisaac.utils.config_store import ExampleConfig          # type: ignore
 
 from motion import Dingo
 from scheduler import Objective
@@ -66,11 +66,11 @@ class PhysicalWorld:
             world_config =  yaml.safe_load(stream)
 
         params = {**base_config, **world_config}
+        
+        objective = Objective(config["mppi"].u_min, config["mppi"].u_max)
 
-        objectives = Objective()
-        controller = MPPIisaacPlanner(config, objectives)
-
-        return cls(params, config, objectives, controller)
+        controller = MPPIisaacPlanner(config, objective)
+        return cls(params, config, objective, controller)
 
     def configure(self, robot_name):
         rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
