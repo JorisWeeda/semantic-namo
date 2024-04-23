@@ -9,10 +9,11 @@ import time
 import pandasgui
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from environment import SimulateWorld, PhysicalWorld
 from scheduler import Scheduler
-from monitor import Monitor
+from monitor import Dashboard, Monitor
 
 
 if __name__ == "__main__":
@@ -39,34 +40,38 @@ if __name__ == "__main__":
 
     scheduler = Scheduler.create_scheduler(layout)
 
+    dashboard = Dashboard()
+
     start_time = time.time()
-    set_command = True
 
     monitor.start_monitoring()
     while not rospy.is_shutdown():
         loop_start_time = time.time()
 
-        if (time.time() - start_time >= 5) and world.is_goal_reached and set_command:
-            # scheduler.generate_path(world.simulation)
+        if (time.time() - start_time >= 5) and scheduler.waypoints is None:
+            scheduler.generate_tasks(world.simulation)
 
-            random_x = random.uniform(0, 1.5)
-            random_y = random.uniform(-1.5, 1.5)
-            random_yaw = random.uniform(-np.pi, np.pi)
-
-            goal = np.array([0., 0., 0.])
-            mode = np.array([0., 0.])
-
-            world.update_objective(goal, mode)
-            set_command = False
+        if world.is_goal_reached and scheduler.waypoints is not None:
+            waypoint = scheduler.get_next_waypoint()
+            if waypoint is not None:
+                goal = [waypoint[0], waypoint[1] , np.pi/2]
+                world.update_objective(goal)
 
         action = world.run()
 
-        monitor.step_monitoring()
+        rollouts = world.get_rollouts()
+        all_states = world.get_states()
+        best_state = world.get_best_state()
 
+        if all_states.numel():
+            current_dof = world.simulation.dof_state[0]
+            dashboard.update_plot(rollouts, all_states, best_state, current_dof, world.goal)
+
+        monitor.step_monitoring()
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.numpy())
 
-        if (time.time() - start_time >= 20) and world.is_goal_reached:
+        if scheduler.is_finished():
             break
 
     if is_simulation:
