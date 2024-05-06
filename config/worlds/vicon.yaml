@@ -1,11 +1,5 @@
 name: "Vicon"
 description: "Navigation Among Movable Obstacles: Vicon Bridge Approach"
 
-
-scheduler:
-    step: 0.2
-    goal: [0.0, 3.5]
-
 environment:
-    robot:
-        init_state: [0.0, -3, 0.0]
+    obstacles:

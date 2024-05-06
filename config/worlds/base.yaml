@@ -1,16 +1,11 @@
-range_x: [-6., 6.]
-range_y: [-6., 6.]
-
 camera:
     pos: [-6., 0., 5.]
     tar: [0., 0., 0.]
 
 scheduler:
     step: 0.5
-    goal: [0.0, 3.0]
     mass_threshold: 10.0 
     path_inflation: 0.3
-    path_step_size: 0.1
 
 controller:
     pos_tolerance: 0.1  # meters

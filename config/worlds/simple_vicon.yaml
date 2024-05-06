@@ -1,0 +1,15 @@
+name: "Simple Vicon"
+description: "Navigation Among Movable Obstacles: Vicon Approach"
+
+environment:
+    obstacles:
+        - chair:
+            name: "Chair 1"
+            topic_name: "dynamic_object1"
+            init_pos: [40.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - chair:
+            name: "Chair 2"
+            topic_name: "dynamic_object2"
+            init_pos: [20.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]

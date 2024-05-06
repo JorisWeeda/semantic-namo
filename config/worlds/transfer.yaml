@@ -1,7 +1,6 @@
 name: "Transfer"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
-
 environment:
     demarcation:
         - wall:
@@ -55,7 +54,6 @@ environment:
             name: "Chaise 3"
             init_pos: [0.0, 2.5, 0.1]
             init_ori: [0.0, 0.0, 0.0]
-
 
     robot:
         init_state: [-2.5, -2.5, 0.0]
