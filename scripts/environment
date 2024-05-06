@@ -4,12 +4,10 @@ os.environ['APPDATA'] = ""
 
 import hydra
 import rospy
-import random
 import time
 import pandasgui
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 from environment import SimulateWorld, PhysicalWorld
 from scheduler import Scheduler
@@ -19,8 +17,11 @@ from monitor import Dashboard, Monitor
 if __name__ == "__main__":
     rospy.init_node('environment', anonymous=True)
     
+    use_dashboard = rospy.get_param('~use_dashboard')
     is_simulation = rospy.get_param('~is_simulation')
+
     robot_name = rospy.get_param('~robot_name') 
+
     config = rospy.get_param('~config')
     layout = rospy.get_param('~layout')
 
@@ -39,17 +40,17 @@ if __name__ == "__main__":
         monitor.configure_physical_monitor(robot_name)
 
     scheduler = Scheduler.create_scheduler(layout)
-
-    dashboard = Dashboard()
-
-    start_time = time.time()
+    dashboard = Dashboard.create_dashboard(layout)
 
     monitor.start_monitoring()
+
+    start_time = time.time()
     while not rospy.is_shutdown():
         loop_start_time = time.time()
 
-        if (time.time() - start_time >= 5) and scheduler.waypoints is None:
-            scheduler.generate_tasks(world.simulation)
+        if (time.time() - start_time >= 3) and scheduler.waypoints is None:
+            shortest_path, nodes, edges = scheduler.generate_tasks(world.simulation)
+            dashboard.update_planning(shortest_path, nodes, edges)
 
         if world.is_goal_reached and scheduler.waypoints is not None:
             waypoint = scheduler.get_next_waypoint()
@@ -59,15 +60,19 @@ if __name__ == "__main__":
 
         action = world.run()
 
-        rollouts = world.get_rollouts()
-        all_states = world.get_states()
-        best_state = world.get_best_state()
+        if use_dashboard:
+            all_rollout_states = world.get_rollout_states()
+            best_rollout_state = world.get_rollout_best_state()
+            dashboard.update_rollouts(all_rollout_states, best_rollout_state)
 
-        if all_states.numel():
-            current_dof = world.simulation.dof_state[0]
-            dashboard.update_plot(rollouts, all_states, best_state, current_dof, world.goal)
+            robot_dofs = world.get_robot_dofs()
+            dashboard.update_progress(robot_dofs, world.goal)
+
+            actors, states = world.get_actor_states()
+            dashboard.update_overview(actors, states)
 
         monitor.step_monitoring()
+
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.numpy())
 
@@ -76,6 +81,8 @@ if __name__ == "__main__":
 
     if is_simulation:
         world.destroy()
+
+    dashboard.destroy()
 
     monitor.stop_monitoring()
 
