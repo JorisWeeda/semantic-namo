@@ -169,16 +169,19 @@ class SimulateWorld:
 
         self.controller.update_objective(bytes_init, bytes_goal, bytes_mode)
 
+    def get_robot_dofs(self):
+        return self.simulation.dof_state[0]
+    
+    def get_actor_states(self):
+        return self.simulation.env_cfg, self.simulation.root_state[0, :, :]
+
     def get_elapsed_time(self):
         return self.simulation._gym.get_elapsed_time(self.simulation.sim)
 
-    def get_rollouts(self):
-        return self.bytes_to_torch(self.controller.get_rollouts())
-
-    def get_states(self):
+    def get_rollout_states(self):
         return self.bytes_to_torch(self.controller.get_states())
 
-    def get_best_state(self):
+    def get_rollout_best_state(self):
         return self.bytes_to_torch(self.controller.get_n_best_samples())
 
     def destroy(self):
@@ -197,7 +200,7 @@ class SimulateWorld:
         rotation = np.abs(rob_yaw - self._goal[2])
 
         self.is_goal_reached = False
-        if distance < self.pos_tolerance and rotation < self.yaw_tolerance:
+        if distance < self.pos_tolerance:# and rotation < self.yaw_tolerance:
             self.is_goal_reached = True
 
     @staticmethod

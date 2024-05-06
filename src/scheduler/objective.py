@@ -1,7 +1,5 @@
 
 import torch
-import quaternionic
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
 import numpy as np
 
@@ -16,9 +14,9 @@ class Objective:
         self.u_min = torch.Tensor(u_min)
         self.u_max = torch.Tensor(u_max)
 
-        self.w_con = np.diag([1.0, 1.0, 1.0])
-        self.w_dis = 30.0
-        self.w_rot = 5.0
+        self.w_con = np.diag([1.0, 1.0, 5.0])
+        self.w_dis = 25.0
+        self.w_rot = 0.0
         self.w_int = 5.0
 
     def reset(self):
@@ -55,11 +53,16 @@ class Objective:
         return distance_norm_per_env
 
     def _rotation_to_goal(self, sim):
-        goal_quaternion = quaternionic.array(self.goal[3:])
-        envs_quaternion = quaternionic.array(sim.rigid_body_state[:, 3, 3:7])
+        goal_quaternion = self.goal[3:]
+        envs_quaternion = sim.rigid_body_state[:, 3, 3:7]
 
-        rotation_norm_per_env = quaternionic.distance.rotation.intrinsic(envs_quaternion, goal_quaternion)
-        return torch.Tensor(rotation_norm_per_env)
+        dot_products = torch.sum(goal_quaternion * envs_quaternion, dim=-1)
+        dot_products = torch.clamp(dot_products, min=-1.0, max=1.0)
+
+        angles = 2.0 * torch.acos(torch.abs(dot_products))
+
+        rotation_cost_per_env = angles
+        return rotation_cost_per_env
 
     def _interact_to_goal(self, sim):
         net_contact_forces = torch.sum(torch.abs(torch.cat((sim.net_contact_force[:, 0].unsqueeze(1), sim.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
