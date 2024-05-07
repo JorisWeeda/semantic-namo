@@ -1,5 +1,6 @@
 from isaacgym import gymapi
 
+import rospy
 import torch
 import numpy as np
 import networkx as nx
@@ -32,7 +33,7 @@ class Planner:
         edges = self.generate_edges(nodes, reduced_inflated_shapes.values())
 
         graph = nx.Graph()
-        
+
         for i, (x, y, cost) in enumerate(nodes):
             graph.add_node(i, pos=(x, y))
             graph.nodes[i]['cost'] = cost
@@ -41,8 +42,7 @@ class Planner:
             source, target, length = edge
             graph.add_edge(source, target, length=length)
 
-        is_fully_connected = nx.is_connected(graph)
-        print(f'Is the network with the occupation snapshot fully connected: {is_fully_connected}')
+        rospy.loginfo(f'Is the occupation snapshot fully connected: {nx.is_connected(graph)}')
 
         non_inflated_shapes, masses = self.generate_polygons(sim, 0.)
         
@@ -92,12 +92,14 @@ class Planner:
 
         if polygons:
             corner_points = self.get_corner_points(polygons, self.range_x, self.range_y)
-            corner_points = np.hstack((corner_points, np.zeros((corner_points.shape[0], 1))))
-            nodes = np.vstack((nodes, corner_points))
+            if len(corner_points) != 0:
+                corner_points = np.hstack((corner_points, np.zeros((corner_points.shape[0], 1))))
+                nodes = np.vstack((nodes, corner_points))
 
             intersect_points = self.get_intersection_points(polygons, self.range_x, self.range_y)
-            intersect_points = np.hstack((intersect_points, np.zeros((intersect_points.shape[0], 1))))
-            nodes = np.vstack((nodes, intersect_points))
+            if len(intersect_points) != 0:
+                intersect_points = np.hstack((intersect_points, np.zeros((intersect_points.shape[0], 1))))
+                nodes = np.vstack((nodes, intersect_points))
 
             nodes = self.filter_nodes(nodes, polygons)
 

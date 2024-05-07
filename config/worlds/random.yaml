@@ -1,12 +1,15 @@
-name: "Empty"
+name: "Random"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
 range_x: [-4.0, 4.0]
 range_y: [-4.0, 4.0]
 
-goal: [4.0, 4.0]
+goal: [3.5, 3.05]
 
+random: True
+stationary_percentage: 0.05
+adjustable_percentage: 0.10
 
 environment:
     robot:
-        init_state: [0.0, -3., 0.0]
+        init_state: [-3, -3, 90.0]
