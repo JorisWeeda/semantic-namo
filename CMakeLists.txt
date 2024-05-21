@@ -163,6 +163,7 @@ catkin_install_python(PROGRAMS
   scripts/controller
   scripts/environment
   scripts/visualisation
+  tests/benchmark_global_planner
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

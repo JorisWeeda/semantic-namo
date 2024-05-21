@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper      # type: ignore
+from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw        # type: ignore
+
+import os
+import copy
+import csv
+import datetime
+import hydra
+import rospy
+import time
+import torch
+
+import numpy as np
+import networkx as nx
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+
+from environment import SimulateWorld
+from scheduler import Scheduler
+
+
+class BenchmarkGlobalPlanner:
+    
+    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
+
+    SIZE_LIMITS = [2, 10]
+    NAMO_LIMITS = [0, 10]
+
+    def __init__(self, gym_world, scheduler, file_path):
+        self.gym_world = gym_world
+        self.scheduler = scheduler
+        self.file_path = file_path
+
+    @classmethod
+    def create_benchmark_global_planner(cls):
+        rospy.init_node('test_global_planner_node')
+        hydra.initialize(config_path="../config", version_base=None)
+    
+        config = rospy.get_param('~config')
+        layout = rospy.get_param('~layout')
+
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
+        scheduler = Scheduler.create_scheduler(layout)
+
+        data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
+        os.makedirs(data_folder, exist_ok=True)
+
+        file_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+        file_path = os.path.join(data_folder, file_name)
+
+        return cls(gym_world, scheduler, file_path)
+    
+    def run_global_planners(self):
+        for x in range(*self.SIZE_LIMITS, 1):
+            for y in range(*self.SIZE_LIMITS, 1):
+                for percentage in range(*self.NAMO_LIMITS, 1):
+                    self.gym_world.params['stationary_percentage'] = 0.01
+                    self.gym_world.params['adjustable_percentage'] = percentage / 100
+
+                    robot_dof = self.gym_world.get_robot_dofs()
+                    q_init = (robot_dof[0], robot_dof[2])
+                    q_goal = self.scheduler.robot_goal_pos
+
+                    rospy.loginfo(f'Creating environment (x:{x} y:{y}) and adjustable percentage: {percentage / 100}')
+                    actors, configurations = self.initiate_random_world(x, y)
+
+                    name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
+                    configurations["ID"] = name
+
+                    rospy.loginfo(f'Running PRM global planner on environment.')
+                    result, prm_graph, prm_time, prm_path, prm_cost = self.run_prm_planner(actors)
+
+                    configurations["prm_result"] = result
+                    configurations["prm_time"] = prm_time
+                    configurations["prm_cost"] = prm_cost
+
+                    rospy.loginfo(f'Running RRT global planner on environment.')
+                    result, rrt_graph, rrt_time, rrt_path, rrt_cost = self.run_rrt_planner(actors)
+
+                    configurations["rrt_result"] = result
+                    configurations["rrt_time"] = rrt_time
+                    configurations["rrt_cost"] = rrt_cost
+
+                    rospy.loginfo(f'Saved snapshot of the environment under ID: {name}')
+                    self.save_snapshot_environment(name, (x, y), actors, q_init, q_goal, prm_path, rrt_path, prm_graph, rrt_graph)
+                    self.save_result(self.file_path, configurations)
+
+    def initiate_random_world(self, x, y):
+        self.gym_world.params['range_x'] = [-x, x]
+        self.gym_world.params['range_y'] = [-y, y]
+        
+        self.scheduler.prm_planner.range_x = [-x, x]
+        self.scheduler.prm_planner.range_y = [-y, y]
+        
+        self.scheduler.rrt_planner.range_x = [-x, x]
+        self.scheduler.rrt_planner.range_y = [-y, y]
+
+        self.scheduler.robot_goal_pos[0] = x - 0.5
+        self.scheduler.robot_goal_pos[1] = y - 1
+
+        robot_dof = self.gym_world.get_robot_dofs()
+        robot_dof[0] = -x + 0.5
+        robot_dof[2] = -y + 1.0
+        robot_dof[4] = torch.pi / 2
+
+        self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
+        self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
+
+        additions = self.gym_world.random_additions()
+        additions = [ActorWrapper(**addition) for addition in additions]
+
+        room_area = (2 * x) * (2 * y)
+        stationary_area = 0
+        adjustable_area = 0
+
+        state_ten = torch.zeros(len(additions), 13)
+
+        for i, actor in enumerate(additions):
+            state_ten[i, :3] = torch.tensor(actor.init_pos)
+            state_ten[i, 3:7] = torch.tensor(actor.init_ori)
+
+            actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+            actor.mass = actor.mass + actor_mass_noise
+
+            if actor.mass >= self.scheduler.prm_planner.mass_threshold:
+                stationary_area += (actor.size[0] * actor.size[1])
+            else:
+                adjustable_area += (actor.size[0] * actor.size[1])
+
+        configurations = {"room_area": room_area, "stationary_area": stationary_area, "adjustable_area": adjustable_area}
+        return (additions, state_ten), configurations
+
+    def run_prm_planner(self, actors):
+        start_time = time.time()
+        result, graph, path, cost = self.scheduler.generate_path(self.gym_world.get_robot_dofs(), actors, mode='prm')
+
+        exec_time =  time.time() - start_time
+        return result, graph, exec_time, path, cost
+
+    def run_rrt_planner(self, actors):
+        start_time = time.time()
+        result, graph, path, cost = self.scheduler.generate_path(self.gym_world.get_robot_dofs(), actors, mode='rrt')
+
+        exec_time =  time.time() - start_time
+        return result, graph, exec_time, path, cost
+
+    @staticmethod
+    def save_result(path, configurations):
+        write_headers = not os.path.exists(path)
+        with open(path, 'a', newline='') as file:
+            writer = csv.writer(file)
+
+            if write_headers:
+                headers = list(configurations.keys())
+                writer.writerow(headers)
+
+            results = list(configurations.values())
+            writer.writerow(results)
+
+    @staticmethod
+    def save_snapshot_environment(name, limits, actors, q_init, q_goal, prm_path, rrt_path, prm_graph, rrt_graph):
+        _, axs = plt.subplots(2, 2, figsize=(18, 18))
+
+        max_mass = max(actor.mass for actor in actors[0] if not actor.fixed)
+        for actor, state in zip(*actors):
+            if actor.fixed: 
+                continue
+
+            position, orientation = state[:3], state[3:7]
+            obs_pos, size_x, size_y = position[:2], actor.size[0], actor.size[1]
+
+            corners = np.array([[-size_x / 2, -size_y / 2],
+                                [size_x / 2, -size_y / 2],
+                                [size_x / 2, size_y / 2],
+                                [-size_x / 2, size_y / 2],
+                                [-size_x / 2, -size_y / 2]])
+
+            obs_rot = quaternion_to_yaw(orientation)
+            rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
+                                        [np.sin(obs_rot), np.cos(obs_rot)]])
+
+            rotate_corners = np.dot(corners, rotation_matrix)
+            translate_corners = np.add(rotate_corners, obs_pos)
+
+            color = plt.cm.viridis_r(actor.mass / max_mass)
+            polygon = Polygon(translate_corners, closed=True, color=color)
+
+            axs[0, 0].add_patch(copy.copy(polygon))
+            axs[0, 1].add_patch(copy.copy(polygon))
+            axs[1, 0].add_patch(copy.copy(polygon))
+            axs[1, 1].add_patch(copy.copy(polygon))
+
+        axs[0, 0].set_xlim(-limits[0], limits[0])
+        axs[0, 0].set_ylim(-limits[1], limits[1])
+
+        axs[0, 1].set_xlim(-limits[0], limits[0])
+        axs[0, 1].set_ylim(-limits[1], limits[1])
+
+        axs[1, 0].set_xlim(-limits[0], limits[0])
+        axs[1, 0].set_ylim(-limits[1], limits[1])
+
+        axs[1, 1].set_xlim(-limits[0], limits[0])
+        axs[1, 1].set_ylim(-limits[1], limits[1])
+
+        axs[0, 0].plot(q_init[0], q_init[1], color='green', marker='o', markersize=10, label='Start Node')
+        axs[0, 0].plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=10, label='Goal Node')
+
+        axs[0, 0].set_title('Obstacles and Nodes')
+        axs[0, 0].set_xlabel('X Position')
+        axs[0, 0].set_ylabel('Y Position')
+        axs[0, 0].set_aspect('equal')
+        axs[0, 0].legend()
+
+        if rrt_path is not None:
+            rrt_path = np.array(rrt_path)
+            axs[0, 1].plot(rrt_path[:, 0], rrt_path[:, 1], color='blue', marker='o', markersize=3, label='RRT Path')
+
+        if prm_path is not None:
+            prm_path = np.array(prm_path)
+            axs[0, 1].plot(prm_path[:, 0], prm_path[:, 1], color='orangered', marker='o', markersize=3, label='PRM Path')
+
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
+        cbar = plt.colorbar(sm, ax=axs[0, 0])
+        cbar.set_label('Mass')
+        axs[0, 1].legend()
+
+        if prm_graph is not None:
+            edges_prm = np.array([(prm_graph.nodes[u]['pos'], prm_graph.nodes[v]['pos']) for u, v, _ in prm_graph.edges(data=True)])
+            axs[1, 0].plot(edges_prm[0, :, 0], edges_prm[0, :, 1], color='orange', linewidth=1.0, label='PRM Graph')
+            for edge_prm in edges_prm[1:]:
+                axs[1, 0].plot(edge_prm[:, 0], edge_prm[:, 1], color='orange', linewidth=1.0)
+
+        axs[1, 0].set_xlim(-limits[0], limits[0])
+        axs[1, 0].set_ylim(-limits[1], limits[1])
+
+        axs[1, 0].set_title('PRM Graph')
+        axs[1, 0].set_xlabel('X Position')
+        axs[1, 0].set_ylabel('Y Position')
+        axs[1, 0].set_aspect('equal')
+        axs[1, 0].legend()
+
+        if rrt_graph is not None:
+            edges_rrt = np.array([(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v, _ in rrt_graph.edges(data=True)])
+            axs[1, 1].plot(edges_rrt[0, :, 0], edges_rrt[0, :, 1], color='lightblue', linewidth=1.0, label='RRT Graph')
+            for edge_rrt in edges_rrt[1:]:
+                axs[1, 1].plot(edge_rrt[:, 0], edge_rrt[:, 1], color='lightblue', linewidth=1.0)
+
+        axs[1, 1].set_xlim(-limits[0], limits[0])
+        axs[1, 1].set_ylim(-limits[1], limits[1])
+
+        axs[1, 1].set_title('RRT Graph')
+        axs[1, 1].set_xlabel('X Position')
+        axs[1, 1].set_ylabel('Y Position')
+        axs[1, 1].set_aspect('equal')
+        axs[1, 1].legend()
+
+        folder = os.path.join(os.path.expanduser('~'), BenchmarkGlobalPlanner.DATA_FOLDER, 'images')
+        os.makedirs(folder, exist_ok=True)
+
+        image_file_path = os.path.join(folder, f'{name}.png')
+
+        plt.savefig(image_file_path)
+        plt.close()
+
+
+if __name__ == "__main__":
+    benchmark = BenchmarkGlobalPlanner.create_benchmark_global_planner()
+    benchmark.run_global_planners()
+    benchmark.gym_world.destroy()
+
+    rospy.signal_shutdown("Benchmark tasks completed. Shutting down ROS.")
