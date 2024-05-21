@@ -1,24 +1,25 @@
-
-
+import rospy
 import roslib
 import yaml
 
 import networkx as nx
 import numpy as np
 
-from scheduler.global_planner import Planner
+from scheduler.global_planner import PRM, RRT
 
 
 class Scheduler:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-    def __init__(self, robot_goal_pos, global_planner):
-        self.global_planner = global_planner
+    def __init__(self, robot_goal_pos, prm_planner, rrt_planner):
         self.robot_goal_pos = robot_goal_pos
 
-        self.waypoints = None
-        self.point_idx = 0
+        self.prm_planner = prm_planner
+        self.rrt_planner = rrt_planner
+
+        self.path = None
+        self.next = None
 
     @classmethod
     def create_scheduler(cls, layout):
@@ -40,37 +41,51 @@ class Scheduler:
         mass_threshold = params['scheduler']['mass_threshold']
         path_inflation = params['scheduler']['path_inflation']
 
-        global_planner = Planner(range_x, range_y, mass_threshold, path_inflation)
-        return cls(robot_goal_pos, global_planner)
+        prm_planner = PRM(range_x, range_y, mass_threshold, path_inflation)
+        rrt_planner = RRT(range_x, range_y, path_inflation)
 
-    def generate_tasks(self, sim):
-        graph, _, _ = self.global_planner.graph(sim, self.robot_goal_pos)
+        return cls(robot_goal_pos, prm_planner, rrt_planner)
 
-        init_node = self.find_closest_node(graph, self.global_planner.get_robot_pos(sim))
-        goal_node = self.find_closest_node(graph, self.robot_goal_pos)
+    def generate_path(self, robot_dof, actors, mode='prm'):
+        q_init = (robot_dof[0], robot_dof[2])
+        q_goal = self.robot_goal_pos
 
-        shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node, weight=lambda _, waypoint_node, edge_data: 
-                                         self.custom_weight_function(waypoint_node, edge_data, graph))
-
-        nodes = np.array([(*data['pos'], data['cost'])  for _, data in graph.nodes(data=True)])
-        edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v, _ in graph.edges(data=True)])
-
-        self.waypoints = np.array([nodes[int(i)] for i in shortest_path])
-
-        return shortest_path, nodes, edges
+        if mode == 'prm':
+            rospy.loginfo(f"Planning from {q_init} to {q_goal} using PRM.")
+            graph = self.prm_planner.graph(q_init, q_goal, actors)
+        elif mode == 'rrt':
+            rospy.loginfo(f"Planning from {q_init} to {q_goal} using RRT.")
+            graph = self.rrt_planner.graph(q_init, q_goal, actors)
+        else:
+            raise TypeError(f'Mode {mode} not recognized as a global planner.')
     
+        if graph is None:
+            rospy.loginfo(f"Failed to create graph using {mode}.")
+            return False, None, np.empty((0, 3), dtype='float'), float(0)
+
+        init_node = self.find_closest_node(graph, q_init)
+        goal_node = self.find_closest_node(graph, q_goal)
+
+        shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,
+                                            weight=lambda _, path_node, edge_data:
+                                            self.custom_weight_function(path_node, edge_data, graph))
+
+        self.path = np.array([graph.nodes[path_node]['pos'] for path_node in shortest_path])
+        cost = sum(graph[u][v]['length'] for u, v in zip(shortest_path[:-1], shortest_path[1:]))
+        
+        return True, graph, self.path, cost
+
     def get_next_waypoint(self):
-        if self.waypoints is None:
-            return None
+        if self.next is None:
+            self.next = 0
 
-        self.point_idx += 1
-        if self.point_idx == len(self.waypoints):
+        self.next += 1
+        if self.next >= len(self.path):
             return None
-
-        return self.waypoints[self.point_idx, :]
+        return self.path[self.next, :]
 
     def is_finished(self):
-        if self.waypoints is not None and self.point_idx == len(self.waypoints):
+        if self.path is not None and self.next is not None and self.next >= len(self.path):
             return True
         
         return False
@@ -82,7 +97,7 @@ class Scheduler:
 
         for node, pos in graph.nodes(data='pos'):
             distance = np.linalg.norm(np.array(pos) - np.array(coordinate))
-            
+
             if distance < min_distance:
                 closest_node = node
                 min_distance = distance
@@ -90,9 +105,7 @@ class Scheduler:
         return closest_node
     
     @staticmethod
-    def custom_weight_function(waypoint_id, edge_data, graph):
-        waypoint_cost = graph.nodes[waypoint_id]['cost']
-        length_to_waypoint = edge_data['length']
-        
-        combined_weight = length_to_waypoint + waypoint_cost
-        return combined_weight
+    def custom_weight_function(path_node, edge_data, graph):
+        node_cost = graph.nodes[path_node]['cost']
+        edge_cost = edge_data['length']
+        return edge_cost + node_cost
