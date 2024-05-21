@@ -9,9 +9,10 @@
     <arg name="layout" default="empty" />
 
     <arg name="use_dashboard" default="false" />
+    <arg name="use_viewer" default="true" />
+
     <arg name="is_simulation" default="true" />
-    <arg name="run_frequency" default="20" />
-    
+
     <group if="$(eval is_simulation)">
         <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
             <param name="config" value="$(arg config)" />
@@ -20,11 +21,13 @@
     </group>
 
     <group unless="$(eval is_simulation)">
-        <node name="visualisation" pkg="semantic_namo" type="visualisation" output="screen" launch-prefix="$(arg venv)" >
-            <param name="robot_name" value="$(arg robot_name)" />
-            <param name="config" value="$(arg config)" />
-            <param name="layout" value="$(arg layout)" />
-        </node>
+        <group if="$(eval use_viewer)">
+            <node name="visualisation" pkg="semantic_namo" type="visualisation" output="screen" launch-prefix="$(arg venv)" >
+                <param name="robot_name" value="$(arg robot_name)" />
+                <param name="config" value="$(arg config)" />
+                <param name="layout" value="$(arg layout)" />
+            </node>
+        </group>
 
         <include file="$(find vicon_bridge)/launch/vicon.launch">
             <arg name="only_use_object_specific" default="true"/>
@@ -39,6 +42,7 @@
     <node name="environment" pkg="semantic_namo" type="environment" output="screen" required="true" launch-prefix="$(arg venv)">
         <param name="use_dashboard" value="$(arg use_dashboard)" />
         <param name="is_simulation" value="$(arg is_simulation)" />
+        <param name="use_viewer" value="$(arg use_viewer)" />
         <param name="robot_name" value="$(arg robot_name)" />
         <param name="config" value="$(arg config)" />
         <param name="layout" value="$(arg layout)" />

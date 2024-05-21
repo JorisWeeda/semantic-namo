@@ -1,0 +1,16 @@
+<launch>
+    <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
+    
+    <arg name="config" default="config_dingo_push" />
+    <arg name="layout" default="random" />
+
+    <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
+        <param name="config" value="$(arg config)" />
+        <param name="layout" value="$(arg layout)" />
+    </node>
+
+    <node name="benchmark_global_planner" pkg="semantic_namo" type="benchmark_global_planner" output="screen" required="true" launch-prefix="$(arg venv)">
+        <param name="config" value="$(arg config)" />
+        <param name="layout" value="$(arg layout)" />
+    </node>
+</launch>
