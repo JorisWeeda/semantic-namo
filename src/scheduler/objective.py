@@ -1,7 +1,9 @@
+from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
 import torch
 
 import numpy as np
+
 
 
 
@@ -14,55 +16,51 @@ class Objective:
         self.u_min = torch.Tensor(u_min)
         self.u_max = torch.Tensor(u_max)
 
-        self.w_con = np.diag([1.0, 1.0, 5.0])
-        self.w_dis = 25.0
-        self.w_rot = 0.0
-        self.w_int = 5.0
+        self.w_con = np.diag([1.0, 1.0, 1.0])
+        self.w_dis = 40.0
+        self.w_rot = 20.0
+        self.w_int = 10.0
 
     def reset(self):
         pass
 
     def compute_cost(self, sim, u):
-        cost_distance_to_goal = self.w_dis * self._distance_to_goal(sim)
-        cost_rotation_to_goal = self.w_rot * self._rotation_to_goal(sim)
-        cost_interact_to_goal = self.w_int * self._interact_to_goal(sim)
+        cost_distance_to_goal = self._distance_to_goal(sim)
+        cost_rotation_to_goal = self._rotation_to_goal(sim)
+        cost_interact_to_goal = self._interact_to_goal(sim)
 
         cost_high_control_vec = self._cost_control_vec(u)
 
-        total_cost = cost_distance_to_goal + \
-                     cost_rotation_to_goal + \
-                     cost_interact_to_goal + \
+        total_cost = self.w_dis * cost_distance_to_goal + \
+                     self.w_rot * cost_rotation_to_goal + \
+                     self.w_int * cost_interact_to_goal + \
                      cost_high_control_vec
         
         return total_cost
 
     def _cost_control_vec(self, u):
-        normalized_u = (u - self.u_min) / (self.u_max - self.u_min)
+        normalized_u = torch.abs(u / (self.u_max - self.u_min))
         
         cost_control_vec_per_env = torch.sum((normalized_u @ self.w_con) * normalized_u, dim=1)
         return cost_control_vec_per_env
 
     def _distance_to_goal(self, sim):
-        current_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
+        sampled_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
         initial_rob_pos = torch.Tensor([self.init[0], self.init[2]])
         
         initial_distance =  torch.linalg.norm(initial_rob_pos - self.goal[:2])
-        distance_per_env =  torch.linalg.norm(current_rob_pos - self.goal[:2], axis=1)
+        distance_per_env =  torch.linalg.norm(sampled_rob_pos - self.goal[:2], axis=1)
 
-        distance_norm_per_env = distance_per_env / initial_distance
+        distance_norm_per_env = distance_per_env / (initial_distance + 1e-10)
+        torch.clamp(distance_norm_per_env, min=0.1)
         return distance_norm_per_env
 
     def _rotation_to_goal(self, sim):
-        goal_quaternion = self.goal[3:]
-        envs_quaternion = sim.rigid_body_state[:, 3, 3:7]
+        tar_yaw = torch.atan2(self.goal[1] - sim.dof_state[:, 2], self.goal[0] - sim.dof_state[:, 0])
+        rob_yaw = quaternion_to_yaw(sim.rigid_body_state[:, 3, 3:7])
 
-        dot_products = torch.sum(goal_quaternion * envs_quaternion, dim=-1)
-        dot_products = torch.clamp(dot_products, min=-1.0, max=1.0)
-
-        angles = 2.0 * torch.acos(torch.abs(dot_products))
-
-        rotation_cost_per_env = angles
-        return rotation_cost_per_env
+        rotation_norm_cost_per_env = torch.abs(tar_yaw - rob_yaw) / torch.pi
+        return rotation_norm_cost_per_env
 
     def _interact_to_goal(self, sim):
         net_contact_forces = torch.sum(torch.abs(torch.cat((sim.net_contact_force[:, 0].unsqueeze(1), sim.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
