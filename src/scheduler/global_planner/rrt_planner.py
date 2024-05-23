@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import networkx as nx
 
@@ -17,7 +19,7 @@ class FailedToGeneratePath(Exception):
 
 class RRT:
 
-    MAX_ITERATIONS = int(1e6)
+    MAX_ITERATION_TIME = 300
 
     def __init__(self, range_x, range_y, path_inflation):
         self.range_x = range_x
@@ -26,7 +28,7 @@ class RRT:
         self.path_inflation = path_inflation
 
     def graph(self, q_init, q_goal, actors, intermediate_goal_check=True):
-        c_space = self.generate_polygons(actors)
+        c_space = self.generate_polygons(actors, overwrite_inflation=0.1)
         
         q_init = np.array(q_init)
         q_goal = np.array(q_goal)
@@ -37,10 +39,11 @@ class RRT:
         if self.is_node_in_obstacle_space(q_goal, c_space):
             raise FailedToGeneratePath("Given goal configuration is in obstacle space.")
 
-        nodes = np.array([q_init])  # Initialize nodes with the initial node
+        nodes = np.array([q_init])
         edges = []
 
-        for _ in range(self.MAX_ITERATIONS):
+        start_time = time.time()
+        while (time.time() - start_time) < self.MAX_ITERATION_TIME:
             new_node = self.generate_random_node()
 
             if any((new_node == node).all() for node in nodes):
@@ -70,17 +73,12 @@ class RRT:
                 edges.append((closest_node_idx, created_node_idx))
                 break
             
-        if q_goal.tolist() not in nodes.tolist():
-            return None
-        
-        edges = np.array(edges)
-        
         graph = nx.Graph()
 
         for node_idx, node in enumerate(nodes):
             graph.add_node(node_idx, pos=(node[0], node[1]), cost=0.)
 
-        for _, (start_idx, end_idx) in enumerate(edges):
+        for _, (start_idx, end_idx) in enumerate(np.array(edges)):
             edge_length = np.linalg.norm(nodes[start_idx] - nodes[end_idx])
             graph.add_edge(start_idx, end_idx, length=edge_length)
         

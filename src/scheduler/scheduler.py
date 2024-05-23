@@ -59,16 +59,20 @@ class Scheduler:
         else:
             raise TypeError(f'Mode {mode} not recognized as a global planner.')
     
-        if graph is None:
+        if not graph or not any(np.linalg.norm(np.array(node[1]) - np.array(q_goal)) < 1e-6 for node in graph.nodes(data='pos')):
             rospy.loginfo(f"Failed to create graph using {mode}.")
-            return False, None, np.empty((0, 3), dtype='float'), float(0)
+            return False, graph, np.empty((0, 3), dtype='float'), float(0)
 
         init_node = self.find_closest_node(graph, q_init)
         goal_node = self.find_closest_node(graph, q_goal)
 
-        shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,
-                                            weight=lambda _, path_node, edge_data:
-                                            self.custom_weight_function(path_node, edge_data, graph))
+        try:
+            shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,
+                                                weight=lambda _, path_node, edge_data:
+                                                self.custom_weight_function(path_node, edge_data, graph))
+        except nx.exception.NetworkXNoPath:
+            rospy.loginfo(f"Failed to create shortest path using {mode}.")
+            return False, graph, np.empty((0, 3), dtype='float'), float(0)
 
         self.path = np.array([graph.nodes[path_node]['pos'] for path_node in shortest_path])
         cost = sum(graph[u][v]['length'] for u, v in zip(shortest_path[:-1], shortest_path[1:]))

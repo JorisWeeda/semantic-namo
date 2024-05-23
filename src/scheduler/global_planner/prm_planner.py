@@ -24,7 +24,7 @@ class PRM:
         if actors[0] and self.is_goal_blocked(q_init, q_goal, actors, margin):
             rospy.loginfo("Goal is blocked by static obstacles.")
             return None
-            
+
         actor_polygons, _ = self.generate_polygons(actors)
         avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - margin)
 
@@ -45,11 +45,11 @@ class PRM:
 
         inflated_shapes, masses = self.generate_polygons(actors)
         non_inflated_shapes, _ = self.generate_polygons(actors, 0.)
-        
+
         stationary_polygons = {name: polygon for name, polygon in inflated_shapes.items() if masses[name] >= self.mass_threshold}
         adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] < self.mass_threshold}
 
-        passages = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses, 2*self.path_inflation)
+        passages = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses, self.path_inflation)
         graph = self.add_passages_to_graph(graph, passages)
 
         return graph
@@ -147,7 +147,7 @@ class PRM:
     def generate_passages(self, shapes, masses, inflation):
         passages = np.empty((0, 4), dtype='float')
 
-        id_pairs = self.find_close_pairs(shapes, inflation)
+        id_pairs = self.find_close_pairs(shapes, (2 * inflation))
         for id_1, id_2 in id_pairs:
             if masses[id_1] >= self.mass_threshold and masses[id_2] >= self.mass_threshold:
                 continue
@@ -166,9 +166,8 @@ class PRM:
             centroid_line = LineString([point_centroid_light_ob, point_closest_heavy_ob])
             nearest_point = centroid_line.interpolate(centroid_line.project(passage_centroid))
 
-            search_distance = self.max_distance_polygon(light_ob)
-            # passages = np.vstack((passages, (nearest_point.x, nearest_point.y, masses[light_id], search_distance)))
-            passages = np.vstack((passages, (passage_centroid.x, passage_centroid.y, masses[light_id], search_distance)))
+            search_distance = self.search_distance_radius(light_ob)
+            passages = np.vstack((passages, (nearest_point.x, nearest_point.y, masses[light_id], search_distance)))
 
         return passages
 
@@ -256,12 +255,10 @@ class PRM:
                         graph.add_edge(new_node_index, node, length=edge_line.length)
                     if shapes and not any(edge_line.intersects(polygon) for polygon in shapes.values()):
                         graph.add_edge(new_node_index, node, length=edge_line.length)
-
         return graph
 
     @staticmethod    
-    def max_distance_polygon(polygon):
+    def search_distance_radius(polygon):
         vertices = list(polygon.exterior.coords)
         distance = [LineString([v_1, v_2]).length for v_1, v_2 in combinations(vertices, 2)]
         return max(distance)
-
