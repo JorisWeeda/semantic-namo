@@ -25,8 +25,8 @@ class BenchmarkGlobalPlanner:
     
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
 
-    SIZE_LIMITS = [2, 10]
-    NAMO_LIMITS = [0, 10]
+    SIZE_LIMITS = [5, 20]
+    NAMO_LIMITS = [0, 20]
 
     def __init__(self, gym_world, scheduler, file_path):
         self.gym_world = gym_world
@@ -98,11 +98,11 @@ class BenchmarkGlobalPlanner:
         self.scheduler.rrt_planner.range_y = [-y, y]
 
         self.scheduler.robot_goal_pos[0] = x - 0.5
-        self.scheduler.robot_goal_pos[1] = y - 1
+        self.scheduler.robot_goal_pos[1] = y - 0.5
 
         robot_dof = self.gym_world.get_robot_dofs()
         robot_dof[0] = -x + 0.5
-        robot_dof[2] = -y + 1.0
+        robot_dof[2] = -y + 0.5
         robot_dof[4] = torch.pi / 2
 
         self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
@@ -213,6 +213,10 @@ class BenchmarkGlobalPlanner:
         axs[0, 0].set_aspect('equal')
         axs[0, 0].legend()
 
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
+        cbar = plt.colorbar(sm, ax=axs[0, 0])
+        cbar.set_label('Mass')
+
         if rrt_path is not None:
             rrt_path = np.array(rrt_path)
             axs[0, 1].plot(rrt_path[:, 0], rrt_path[:, 1], color='blue', marker='o', markersize=3, label='RRT Path')
@@ -221,16 +225,21 @@ class BenchmarkGlobalPlanner:
             prm_path = np.array(prm_path)
             axs[0, 1].plot(prm_path[:, 0], prm_path[:, 1], color='orangered', marker='o', markersize=3, label='PRM Path')
 
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
-        cbar = plt.colorbar(sm, ax=axs[0, 0])
-        cbar.set_label('Mass')
+        axs[0, 1].set_aspect('equal')
         axs[0, 1].legend()
 
         if prm_graph is not None:
-            edges_prm = np.array([(prm_graph.nodes[u]['pos'], prm_graph.nodes[v]['pos']) for u, v, _ in prm_graph.edges(data=True)])
+            mst_prm = nx.minimum_spanning_tree(prm_graph)
+            edges_prm = np.array([(prm_graph.nodes[u]['pos'], prm_graph.nodes[v]['pos']) for u, v in prm_graph.edges])
+            mst_edges_prm = np.array([(mst_prm.nodes[u]['pos'], mst_prm.nodes[v]['pos']) for u, v in mst_prm.edges])
+
             axs[1, 0].plot(edges_prm[0, :, 0], edges_prm[0, :, 1], color='orange', linewidth=1.0, label='PRM Graph')
             for edge_prm in edges_prm[1:]:
                 axs[1, 0].plot(edge_prm[:, 0], edge_prm[:, 1], color='orange', linewidth=1.0)
+
+            axs[1, 0].plot(mst_edges_prm[0, :, 0], mst_edges_prm[0, :, 1], color='red', linewidth=1.0, label='PRM MST')
+            for edge_prm in mst_edges_prm[1:]:
+                axs[1, 0].plot(edge_prm[:, 0], edge_prm[:, 1], color='red', linewidth=1.0)
 
         axs[1, 0].set_xlim(-limits[0], limits[0])
         axs[1, 0].set_ylim(-limits[1], limits[1])
@@ -242,10 +251,17 @@ class BenchmarkGlobalPlanner:
         axs[1, 0].legend()
 
         if rrt_graph is not None:
-            edges_rrt = np.array([(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v, _ in rrt_graph.edges(data=True)])
+            mst_rrt = nx.minimum_spanning_tree(rrt_graph)
+            edges_rrt = np.array([(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v in rrt_graph.edges])
+            mst_edges_rrt = np.array([(mst_rrt.nodes[u]['pos'], mst_rrt.nodes[v]['pos']) for u, v in mst_rrt.edges])
+
             axs[1, 1].plot(edges_rrt[0, :, 0], edges_rrt[0, :, 1], color='lightblue', linewidth=1.0, label='RRT Graph')
             for edge_rrt in edges_rrt[1:]:
                 axs[1, 1].plot(edge_rrt[:, 0], edge_rrt[:, 1], color='lightblue', linewidth=1.0)
+
+            axs[1, 1].plot(mst_edges_rrt[0, :, 0], mst_edges_rrt[0, :, 1], color='purple', linewidth=1.0, label='RRT MST')
+            for edge_rrt in mst_edges_rrt[1:]:
+                axs[1, 1].plot(edge_rrt[:, 0], edge_rrt[:, 1], color='purple', linewidth=1.0)
 
         axs[1, 1].set_xlim(-limits[0], limits[0])
         axs[1, 1].set_ylim(-limits[1], limits[1])
