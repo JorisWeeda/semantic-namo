@@ -8,7 +8,7 @@ goal: [3.5, 3.05]
 
 random: True
 
-stationary_percentage: 0.10
+stationary_percentage: 0.01
 stationary_size_noise: 0.10
 
 adjustable_percentage: 0.10
