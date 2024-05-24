@@ -6,12 +6,11 @@ from motion import Dingo
 from scheduler import Objective
 
 import io
+import copy
 import rospy
 import roslib
 import torch
 import yaml
-
-import numpy as np
 
 from functools import partial
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
@@ -22,8 +21,9 @@ class PhysicalWorld:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-    def __init__(self, params, config, objectives, controller):        
-        self.objectives = objectives
+    MSG_TIMEOUT = 3
+    
+    def __init__(self, params, config, controller):        
         self.controller = controller
         self.env_config = None
 
@@ -38,9 +38,8 @@ class PhysicalWorld:
         self.obstacle_states = []
 
         self.robot_prev_msg = None
-        self.robot_q_dot = None
-        self.robot_q = None
-        self.robot_R = None
+        self.robot_q_dot = torch.zeros(3)
+        self.robot_q = torch.zeros(3)
 
         self._goal = None
         self._mode = None
@@ -73,53 +72,55 @@ class PhysicalWorld:
         objective = Objective(config["mppi"].u_min, config["mppi"].u_max)
 
         controller = MPPIisaacPlanner(config, objective)
-        return cls(params, config, objective, controller)
+        return cls(params, config, controller)
 
     def configure(self, robot_name):
         additions = self.create_additions()
         
         self.controller.add_to_env(additions)
-        self.env_config = self.controller.sim.env_cfg
-
+        self.env_config = additions
+        
         rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
         rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
+
+        self.update_objective(self.robot_q, (0., 0.))
 
     def create_additions(self):
         additions =[]
 
-        if self.params["environment"].get("obstacles", None):
-            for idx, obstacle in enumerate(self.params["environment"]["obstacles"]):
-                obs_type = next(iter(obstacle))
-                obs_args = self.params["objects"][obs_type]
+        if self.params.get("environment", None):
+            if self.params["environment"].get("obstacles", None):
+                for idx, obstacle in enumerate(self.params["environment"]["obstacles"]):
+                    obs_type = next(iter(obstacle))
+                    obs_args = self.params["objects"][obs_type]
 
-                obstacle = {**obs_args, **obstacle[obs_type]}
-                topic_name = obstacle.get("topic_name", None)
+                    obstacle = {**obs_args, **obstacle[obs_type]}
+                    topic_name = obstacle.get("topic_name", None)
 
-                empty_msg = PoseWithCovarianceStamped()
-                pos, ori = empty_msg.pose.pose.position, empty_msg.pose.pose.orientation
+                    empty_msg = PoseWithCovarianceStamped()
+                    pos, ori = empty_msg.pose.pose.position, empty_msg.pose.pose.orientation
 
-                self.obstacle_states.append([pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w])
+                    self.obstacle_states.append([pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w])
 
-                rospy.Subscriber(f'/vicon/{topic_name}', PoseWithCovarianceStamped, partial(self._cb_obstacle_state, idx), queue_size=1)
-                rospy.wait_for_message(f'/vicon/{topic_name}', PoseWithCovarianceStamped, timeout=10)
+                    rospy.Subscriber(f'/vicon/{topic_name}', PoseWithCovarianceStamped, partial(self._cb_obstacle_state, idx), queue_size=1)
+                    rospy.wait_for_message(f'/vicon/{topic_name}', PoseWithCovarianceStamped, timeout=10)
 
-                additions.append(obstacle)
+                    additions.append(obstacle)
 
         return additions
 
     def run(self):
-        if self.robot_q is not None:
+        if self.robot_prev_msg is not None:
             action = self.controller.compute_action(self.robot_q, self.robot_q_dot)
-            lin_x, lin_y, ang_z = action[0], action[1], action[2]
 
             if not self.is_goal_reached:
-                self.robot.move(lin_x, lin_y, ang_z)
+                self.robot.move(*action)
             else:
                 rospy.loginfo_throttle(1, "The goal is reached, no action applied to the robot.")
 
-    def update_objective(self, goal, mode=(0, 0)):
-        self._goal = goal
-        self._mode = mode
+    def update_objective(self, goal, mode=[0, 0]):
+        self._goal = torch.tensor(copy.copy(goal))
+        self._mode = torch.tensor(copy.copy(mode))
 
         quaternions = self.yaw_to_quaternion(goal[2])
         q, q_dot = self.robot_q, self.robot_q_dot
@@ -128,7 +129,7 @@ class PhysicalWorld:
         tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions])
         tensor_mode = torch.tensor([mode[0], mode[1]])
 
-        rospy.loginfo(f"New objective init: {tensor_init}")
+        rospy.loginfo(f"New starting state: {tensor_init}")
         rospy.loginfo(f"New objective goal: {tensor_goal}")
         rospy.loginfo(f"New objective mode: {tensor_mode}")
 
@@ -141,24 +142,23 @@ class PhysicalWorld:
         rob_yaw = self.robot_q[2]
         rob_pos = self.robot_q[:2]
 
-        distance = np.linalg.norm(rob_pos - self._goal[:2])
-        rotation = np.abs(rob_yaw - self._goal[2])
+        distance = torch.linalg.norm(rob_pos - self._goal[:2])
+        rotation = torch.abs(rob_yaw - self._goal[2])
 
         self.is_goal_reached = False
         if distance < self.pos_tolerance and rotation < self.yaw_tolerance:
             self.is_goal_reached = True
 
     def _cb_robot_state(self, msg):
-        curr_pos = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
+        curr_pos = torch.tensor([msg.pose.pose.position.x, msg.pose.pose.position.y])
         curr_ori = msg.pose.pose.orientation
 
         _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
-        self.robot_q = np.array([curr_pos[0], curr_pos[1], curr_yaw])
-        self.robot_q_dot = np.array([0., 0., 0.])
+        self.robot_q = torch.tensor([curr_pos[0], curr_pos[1], curr_yaw])
 
         if self.robot_prev_msg is not None:
-            prev_pos = np.array([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y])
+            prev_pos = torch.tensor([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y])
             prev_ori = self.robot_prev_msg.pose.pose.orientation
 
             _, _, prev_yaw = euler_from_quaternion([prev_ori.x, prev_ori.y, prev_ori.z, prev_ori.w])
@@ -168,12 +168,16 @@ class PhysicalWorld:
             linear_velocity = (curr_pos - prev_pos) / delta_t
             angular_velocity = (curr_yaw - prev_yaw) / delta_t
 
-            self.robot_R = np.array([[np.cos(curr_yaw), -np.sin(curr_yaw)], [np.sin(curr_yaw), np.cos(curr_yaw)]])
-            self.robot_q_dot = np.array([linear_velocity[0], linear_velocity[1], angular_velocity])
+            cos_yaw = torch.cos(torch.tensor([curr_yaw]))
+            sin_yaw = torch.sin(torch.tensor([curr_yaw]))
+            self.robot_R = torch.tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]])
+
+            before_robot_xy_dot = torch.tensor([[linear_velocity[0]], [linear_velocity[1]]])
+            robot_xy_dot = torch.matmul(torch.transpose(self.robot_R, 0, 1), before_robot_xy_dot)
+            
+            self.robot_q_dot = torch.tensor([*robot_xy_dot, angular_velocity])
             
             self.check_goal_reached()
-        else:
-            self.update_objective((*curr_pos, curr_yaw))
 
         self.robot_prev_msg = msg
 

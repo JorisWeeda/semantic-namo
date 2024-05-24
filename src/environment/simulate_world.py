@@ -13,6 +13,9 @@ import zerorpc
 
 import numpy as np
 
+from shapely.geometry import Polygon
+from shapely.affinity import rotate
+
 from scipy.spatial.transform import Rotation
 from tf.transformations import quaternion_from_euler
 
@@ -32,6 +35,7 @@ class SimulateWorld:
 
         self.pos_tolerance = params['controller']['pos_tolerance']
         self.yaw_tolerance = params['controller']['yaw_tolerance']
+        self.vel_tolerance = params['controller']['vel_tolerance']
 
         self._goal = None
         self._mode = None
@@ -39,19 +43,19 @@ class SimulateWorld:
         self.is_goal_reached = False
 
     @classmethod
-    def build(cls, config: ExampleConfig, layout: str):
-        world = cls.create(config, layout)
+    def build(cls, config: ExampleConfig, layout: str, use_viewer: bool):
+        world = cls.create(config, layout, use_viewer)
         world.configure()
         return world
 
     @classmethod
-    def create(cls, config, layout):
+    def create(cls, config, layout, use_viewer):
         simulation = IsaacGymWrapper(
             config["isaacgym"],
             init_positions=config["initial_actor_positions"],
             actors=config["actors"],
             num_envs=1,
-            viewer=True,
+            viewer=use_viewer,
             device=config["mppi"].device,
         )
 
@@ -111,10 +115,10 @@ class SimulateWorld:
 
                 obstacle = {**obs_args, **obstacle[obs_type]}
 
-                init_ori = obstacle.get("init_ori", None)
-                init_pos = obstacle.get("init_pos", None)
-
-                init_ori = Rotation.from_euler('xyz', init_ori, degrees=True).as_quat().tolist()
+                init_ori = obstacle["init_pos"]
+                init_pos = obstacle["init_pos"]
+                
+                init_ori = self.yaw_to_quaternion(np.deg2rad(init_ori[-1]))
                 
                 obstacle["init_ori"] = init_ori
                 obstacle["init_pos"] = init_pos
@@ -124,10 +128,7 @@ class SimulateWorld:
         return additions
 
     def random_additions(self):        
-        additions = []
-
-        demarcation = self.create_walls()
-        additions += demarcation 
+        additions = self.create_walls()
 
         range_x = self.params['range_x']
         range_y = self.params['range_y']
@@ -135,63 +136,73 @@ class SimulateWorld:
         area = (range_x[1] - range_x[0]) * (range_y[1] - range_y[0])
 
         stationary_percentage = self.params['stationary_percentage']
+        stationary_size_noise = self.params['stationary_size_noise']
+
         adjustable_percentage = self.params['adjustable_percentage']
-
-        stationary_args = self.params["objects"]["stationary"]
-        adjustable_args = self.params["objects"]["adjustable"]
-
-        len_stationary_objects = int(area / (stationary_args['size'][0] * stationary_args['size'][1]) * stationary_percentage)
-        len_adjustable_objects = int(area / (adjustable_args['size'][0] * adjustable_args['size'][1]) * adjustable_percentage)
+        adjustable_size_noise = self.params['adjustable_size_noise']
 
         inflation = self.params["scheduler"]["path_inflation"]
         init_pose = self.params["environment"]["robot"]["init_state"]
         goal_pose = self.params["goal"]
 
-        excluded_poses = ({'init_pos': init_pose, 'size': 2*[inflation]},
-                          {'init_pos': goal_pose, 'size': 2*[inflation]})
+        excluded_poses = ({'init_pos': init_pose, 'init_ori': [0., 0., 0.], 'size': [inflation, inflation]},
+                          {'init_pos': goal_pose, 'init_ori': [0., 0., 0.], 'size': [inflation, inflation]})
 
-        while len(additions) < (len(demarcation) + len_stationary_objects):
-            obstacle = self.params["objects"]['stationary']
-            obstacle["name"] = f"Stationary obstacle {len(additions) + 1}"
+        stationary_area_target = area * stationary_percentage
+        adjustable_area_target = area * adjustable_percentage
+        
+        current_stationary_area = 0.
+        current_adjustable_area = 0.
 
-            random_yaw = random.uniform(0, 360)
+        while current_stationary_area < stationary_area_target:
+            obstacle = copy.deepcopy(self.params["objects"]["stationary"])
+            obstacle["name"] = f"Obstacle {len(additions)}"
+
+            random_yaw = random.uniform(-np.pi, np.pi)
             random_x = random.uniform(*range_x)
             random_y = random.uniform(*range_y)
 
-            init_ori = [0., 0. , random_yaw]
-            init_pos = [random_x, random_y, 0.5]
+            init_pos = [random_x, random_y, 0.5]            
+            init_ori = self.yaw_to_quaternion(random_yaw)
             
-            init_ori = Rotation.from_euler('xyz', init_ori, degrees=True).as_quat().tolist()
+            obstacle["init_ori"] = init_ori
+            obstacle["init_pos"] = init_pos
+
+            size_x, size_y, size_z = obstacle["size"]
+            obstacle["size"][0] = size_x + np.random.uniform(-stationary_size_noise * size_x, stationary_size_noise * size_x)
+            obstacle["size"][1] = size_y + np.random.uniform(-stationary_size_noise * size_y, stationary_size_noise * size_y)
+            obstacle["size"][2] = size_z + np.random.uniform(-stationary_size_noise * size_z, stationary_size_noise * size_z)
+
+            if not self.is_obstacle_overlapping(init_pos, init_ori, obstacle["size"], additions, excluded_poses):
+                current_stationary_area += (obstacle["size"][0] * obstacle["size"][1])
+                additions.append(obstacle)
+            
+        while current_adjustable_area < adjustable_area_target:
+            obstacle = copy.deepcopy(self.params["objects"]["adjustable"])
+            obstacle["name"] = f"Obstacle {len(additions)}"
+
+            random_yaw = random.uniform(-np.pi, np.pi)
+            random_x = random.uniform(*range_x)
+            random_y = random.uniform(*range_y)
+
+            init_pos = [random_x, random_y, 0.5]
+            init_ori = self.yaw_to_quaternion(random_yaw)
 
             obstacle["init_ori"] = init_ori
             obstacle["init_pos"] = init_pos
 
-            if not self.is_obstacle_overlapping(init_pos[:2], obstacle["size"], additions, excluded_poses):
-                additions.append(copy.deepcopy(obstacle))
+            size_x, size_y, size_z = obstacle["size"]
+            obstacle["size"][0] = size_x + np.random.uniform(-adjustable_size_noise * size_x, adjustable_size_noise * size_x)
+            obstacle["size"][1] = size_y + np.random.uniform(-adjustable_size_noise * size_y, adjustable_size_noise * size_y)
+            obstacle["size"][2] = size_z + np.random.uniform(-adjustable_size_noise * size_z, adjustable_size_noise * size_z)
 
-        while len(additions) < (len(demarcation) + len_stationary_objects + len_adjustable_objects):
-            obstacle = self.params["objects"]['adjustable']
-            obstacle["name"] = f"Adjustable obstacle {len(additions) - len_stationary_objects + 1}"
-
-            random_yaw = random.uniform(0, 360)
-            random_x = random.uniform(*range_x)
-            random_y = random.uniform(*range_y)
-
-            init_ori = [0., 0. , random_yaw]
-            init_pos = [random_x, random_y, 0.5]
-            
-            init_ori = Rotation.from_euler('xyz', init_ori, degrees=True).as_quat().tolist()
-
-            obstacle["init_ori"] = init_ori
-            obstacle["init_pos"] = init_pos
-
-            if not self.is_obstacle_overlapping(init_pos[:2], obstacle["size"], additions, excluded_poses):
-                additions.append(copy.deepcopy(obstacle))
+            if not self.is_obstacle_overlapping(init_pos, init_ori, obstacle["size"], additions, excluded_poses):
+                current_adjustable_area += (obstacle["size"][0] * obstacle["size"][1])
+                additions.append(obstacle)
 
         return additions
 
     def create_walls(self, thickness=0.1, height=0.5):
-
         range_x = self.params["range_x"]
         range_y = self.params["range_y"]
 
@@ -200,18 +211,18 @@ class SimulateWorld:
             wall["name"] = name
             wall["size"] = size
             wall["init_pos"] = init_pos
-            wall["init_ori"] = init_ori
+            wall["init_ori"] = self.yaw_to_quaternion(init_ori[-1])
             return wall
 
         walls = []
     
         walls.append(new_wall("l-demarcation-wall", [range_x[1]-range_x[0], thickness, height], [(range_x[1]+range_x[0])/2, range_y[1]+thickness/2, 0], [0.0, 0.0, 0.0]))
         walls.append(new_wall("r-demarcation-wall", [range_x[1]-range_x[0], thickness, height], [(range_x[1]+range_x[0])/2, range_y[0]-thickness/2, 0], [0.0, 0.0, 0.0]))
-        walls.append(new_wall("f-demarcation-wall", [thickness, range_y[1]-range_y[0], height], [range_x[0]-thickness/2, (range_y[1]+range_y[0])/2, 0], [0.0, 0.0, 90.0]))
-        walls.append(new_wall("b-demarcation-wall", [thickness, range_y[1]-range_y[0], height], [range_x[1]+thickness/2, (range_y[1]+range_y[0])/2, 0], [0.0, 0.0, 90.0]))
+        walls.append(new_wall("f-demarcation-wall", [thickness, range_y[1]-range_y[0], height], [range_x[0]-thickness/2, (range_y[1]+range_y[0])/2, 0], [0.0, 0.0, 0.0]))
+        walls.append(new_wall("b-demarcation-wall", [thickness, range_y[1]-range_y[0], height], [range_x[1]+thickness/2, (range_y[1]+range_y[0])/2, 0], [0.0, 0.0, 0.0]))
 
         return walls
-        
+
     def run(self):
         df_state_tensor = self.torch_to_bytes(self.simulation.dof_state)
         rt_state_tensor = self.torch_to_bytes(self.simulation.root_state)
@@ -242,7 +253,7 @@ class SimulateWorld:
         tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions])
         tensor_mode = torch.tensor([mode[0], mode[1]])
 
-        rospy.loginfo(f"New objective init: {tensor_init}")
+        rospy.loginfo(f"New starting state: {tensor_init}")
         rospy.loginfo(f"New objective goal: {tensor_goal}")
         rospy.loginfo(f"New objective mode: {tensor_mode}")
 
@@ -274,17 +285,20 @@ class SimulateWorld:
         if self._goal is None:
             return None
 
-        rob_dof = self.simulation.dof_state[0]
-        
+        rob_dof = self.get_robot_dofs()
         rob_pos = np.array([rob_dof[0], rob_dof[2]])
-        rob_yaw = np.array([rob_dof[4]])
-        
         distance = np.linalg.norm(rob_pos - self._goal[:2])
-        rotation = np.abs(rob_yaw - self._goal[2])
 
         self.is_goal_reached = False
-        if distance < self.pos_tolerance:# and rotation < self.yaw_tolerance:
+        if distance < self.pos_tolerance:
             self.is_goal_reached = True
+
+    def is_finished(self):
+        rob_dof = self.get_robot_dofs()
+
+        if all(vel <= self.vel_tolerance for vel in np.abs([rob_dof[1], rob_dof[3], rob_dof[5]])):
+            return True
+        return False
 
     @staticmethod
     def set_viewer(gym, viewer, position, target):
@@ -292,25 +306,34 @@ class SimulateWorld:
 
     @staticmethod
     def yaw_to_quaternion(yaw):
-        return quaternion_from_euler(0., 0., yaw)
+        return quaternion_from_euler(0., 0., yaw).tolist()
+
 
     @staticmethod
-    def is_obstacle_overlapping(new_position, new_size, obstacles, excluded_poses, margin=0.1):
-        new_min_x = new_position[0] - new_size[0] / 2 - margin
-        new_max_x = new_position[0] + new_size[0] / 2 + margin
-        new_min_y = new_position[1] - new_size[1] / 2 - margin
-        new_max_y = new_position[1] + new_size[1] / 2 + margin
+    def is_obstacle_overlapping(new_position, new_size, new_orientation, obstacles, excluded_poses, margin=0.2):
+        new_polygon = Polygon([
+            (new_position[0] - new_size[0] / 2 - margin, new_position[1] - new_size[1] / 2 - margin),
+            (new_position[0] + new_size[0] / 2 + margin, new_position[1] - new_size[1] / 2 - margin),
+            (new_position[0] + new_size[0] / 2 + margin, new_position[1] + new_size[1] / 2 + margin),
+            (new_position[0] - new_size[0] / 2 - margin, new_position[1] + new_size[1] / 2 + margin)
+        ])
+        new_polygon = rotate(new_polygon, new_orientation[-1], origin=new_position)
 
         all_excluded_poses = list(obstacles) + list(excluded_poses)
         for excluded_pose in all_excluded_poses:
-            obstacle_size, obstacle_position = excluded_pose['size'], excluded_pose['init_pos']
+            obstacle_polygon = Polygon([
+                (excluded_pose['init_pos'][0] - excluded_pose['size'][0] / 2 - margin,
+                excluded_pose['init_pos'][1] - excluded_pose['size'][1] / 2 - margin),
+                (excluded_pose['init_pos'][0] + excluded_pose['size'][0] / 2 + margin,
+                excluded_pose['init_pos'][1] - excluded_pose['size'][1] / 2 - margin),
+                (excluded_pose['init_pos'][0] + excluded_pose['size'][0] / 2 + margin,
+                excluded_pose['init_pos'][1] + excluded_pose['size'][1] / 2 + margin),
+                (excluded_pose['init_pos'][0] - excluded_pose['size'][0] / 2 - margin,
+                excluded_pose['init_pos'][1] + excluded_pose['size'][1] / 2 + margin)
+            ])
 
-            min_x = obstacle_position[0] - obstacle_size[0] / 2 - margin
-            max_x = obstacle_position[0] + obstacle_size[0] / 2 + margin
-            min_y = obstacle_position[1] - obstacle_size[1] / 2 - margin
-            max_y = obstacle_position[1] + obstacle_size[1] / 2 + margin
-
-            if max_x >= new_min_x and min_x <= new_max_x and max_y >= new_min_y and min_y <= new_max_y:
+            obstacle_polygon = rotate(obstacle_polygon, excluded_pose['init_ori'][-1], origin=excluded_pose['init_pos'])
+            if new_polygon.intersects(obstacle_polygon):
                 return True
 
         return False

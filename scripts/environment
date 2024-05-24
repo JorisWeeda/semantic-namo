@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import os
 os.environ['APPDATA'] = ""
 
@@ -16,10 +17,11 @@ from monitor import Dashboard, Monitor
 
 if __name__ == "__main__":
     rospy.init_node('environment', anonymous=True)
-    
-    use_dashboard = rospy.get_param('~use_dashboard')
+
     is_simulation = rospy.get_param('~is_simulation')
 
+    use_dashboard = rospy.get_param('~use_dashboard')
+    use_viewer = rospy.get_param('~use_viewer')
     robot_name = rospy.get_param('~robot_name') 
 
     config = rospy.get_param('~config')
@@ -32,7 +34,7 @@ if __name__ == "__main__":
 
     if is_simulation:
         rospy.loginfo(f'Running simulate world with configuration: {config} and world: {layout}')
-        world = SimulateWorld.build(hydra_config, layout)
+        world = SimulateWorld.build(hydra_config, layout, use_viewer)
         monitor.configure_simulate_monitor(world.simulation)
     else:
         rospy.loginfo(f'Running physical world with configuration: {config} and world: {layout}')
@@ -48,16 +50,18 @@ if __name__ == "__main__":
     while not rospy.is_shutdown():
         loop_start_time = time.time()
 
-        if (time.time() - start_time >= 3) and scheduler.waypoints is None:
-            shortest_path, nodes, edges = scheduler.generate_tasks(world.simulation)
-            dashboard.update_planning(shortest_path, nodes, edges)
+        if (time.time() - start_time >= 5) and scheduler.path is None:
+            robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
+            res, graph, path, _ = scheduler.generate_path(robot_dof, actors)
+            if res:
+                dashboard.update_planning(actors, path, graph)
 
-        if world.is_goal_reached and scheduler.waypoints is not None:
+        if world.is_goal_reached and scheduler.path is not None:
             waypoint = scheduler.get_next_waypoint()
             if waypoint is not None:
                 goal = [waypoint[0], waypoint[1] , np.pi/2]
                 world.update_objective(goal)
-
+    
         action = world.run()
 
         if use_dashboard:
@@ -76,7 +80,7 @@ if __name__ == "__main__":
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.numpy())
 
-        if scheduler.is_finished():
+        if scheduler.is_finished() and world.is_finished():
             break
 
     if is_simulation:
