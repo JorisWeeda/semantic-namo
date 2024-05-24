@@ -36,8 +36,7 @@ class Dashboard:
         range_x = params['range_x']
         range_y = params['range_y']
 
-        # plt.ion()
-        # plt.show()
+        plt.ion()
 
         return cls(range_x, range_y)
 
@@ -80,38 +79,57 @@ class Dashboard:
         self.fig_overview.canvas.draw()
         self.fig_overview.canvas.flush_events()
 
-    def update_planning(self, shortest_path, nodes, edges):
+    def update_planning(self, actors, shortest_path, graph):
         if self.fig_planning is None:
             self.fig_planning, self.ax_2 = plt.subplots()
 
         self.ax_2.clear()
 
-        node_scatter = self.ax_2.scatter(nodes[:, 1], nodes[:, 0], c=nodes[:, 2], cmap=plt.cm.viridis)
+        for actor, state in zip(*actors):
+            position, orientation = state[:3], state[3:7]
+
+            size_x, size_y, _ = actor.size
+            obs_pos = position[:2]
+
+            corners = np.array([[-size_x / 2, -size_y / 2],
+                                [size_x / 2, -size_y / 2],
+                                [size_x / 2, size_y / 2],
+                                [-size_x / 2, size_y / 2],
+                                [-size_x / 2, -size_y / 2]])
+
+            obs_rot = quaternion_to_yaw(orientation)
+            rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
+                                        [np.sin(obs_rot), np.cos(obs_rot)]])
+
+            rotate_corners = np.dot(corners, rotation_matrix)
+            translate_corners = np.add(rotate_corners, obs_pos)
+
+            polygon = Polygon(translate_corners, closed=True, color=actor.color)
+            self.ax_2.add_patch(polygon)
+
+        nodes = np.array([(*data['pos'], data['cost']) for _, data in graph.nodes(data=True)])
+        edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v, _ in graph.edges(data=True)])
+
+        node_scatter = self.ax_2.scatter(nodes[:, 0], nodes[:, 1], c=nodes[:, 2], cmap=plt.cm.viridis)
         cbar = plt.colorbar(node_scatter, ax=self.ax_2)
         cbar.set_label('Cost')
 
         for edge in edges:
-            self.ax_2.plot(edge[:, 1], edge[:, 0], color='blue', linewidth=0.1)
+            self.ax_2.plot(edge[:, 0], edge[:, 1], color='blue', linewidth=0.1)
 
-        if shortest_path:
-            shortest_path_edges = [(shortest_path[i], shortest_path[i+1]) for i in range(len(shortest_path)-1)]
-            
-            for edge in shortest_path_edges:
-                node_i, node_j = nodes[int(edge[0])], nodes[int(edge[1])]
-                self.ax_2.plot([node_i[1], node_j[1]], [node_i[0], node_j[0]], color='green', linewidth=3)
+        if shortest_path is not None:
+            self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], color='green', linewidth=3)
 
         self.ax_2.set_title('Global path planning')
         self.ax_2.autoscale(enable=True)
         self.ax_2.set_aspect('equal')
 
-        self.ax_2.set_xlabel(r'$\longleftarrow$ Y Position')
-        self.ax_2.set_ylabel(r'X Position $\longrightarrow$')
+        self.ax_2.set_xlabel('X Position')
+        self.ax_2.set_ylabel('Y Position')
 
-        self.ax_2.invert_xaxis()
-
-        # self.fig_planning.canvas.draw()
-        # self.fig_planning.canvas.flush_events()
-        plt.show()
+        self.fig_planning.canvas.draw()
+        self.fig_planning.canvas.flush_events()
+        plt.pause(5)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:
