@@ -35,7 +35,7 @@ class Objective:
                      self.w_rot * cost_rotation_to_goal + \
                      self.w_int * cost_interact_to_goal + \
                      cost_high_control_vec
-        
+
         return total_cost
 
     def _cost_control_vec(self, u):
@@ -51,8 +51,8 @@ class Objective:
         initial_distance =  torch.linalg.norm(initial_rob_pos - self.goal[:2])
         distance_per_env =  torch.linalg.norm(sampled_rob_pos - self.goal[:2], axis=1)
 
-        distance_norm_per_env = distance_per_env / (initial_distance + 1e-10)
-        torch.clamp(distance_norm_per_env, min=0.1)
+        distance_norm_per_env = distance_per_env / (initial_distance + 1e-3)
+        torch.clamp(distance_norm_per_env, min=0.2)
         return distance_norm_per_env
 
     def _rotation_to_goal(self, sim):
@@ -69,5 +69,5 @@ class Objective:
         reshaped_contact_forces = net_contact_forces.reshape([sim.num_envs, number_of_bodies])
         interaction_per_env = torch.sum(reshaped_contact_forces, dim=1)
 
-        interaction_norm_per_env = interaction_per_env / (torch.max(interaction_per_env) + 1)
+        interaction_norm_per_env = interaction_per_env / (torch.max(interaction_per_env) + + 1e-3)
         return interaction_norm_per_env

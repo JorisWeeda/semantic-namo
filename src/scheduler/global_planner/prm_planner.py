@@ -21,7 +21,7 @@ class PRM:
         self.path_inflation = path_inflation
     
     def graph(self, q_init, q_goal, actors, margin=0.05):
-        if actors[0] and self.is_goal_blocked(q_init, q_goal, actors, margin):
+        if len(actors[0]) > 1 and self.is_goal_blocked(q_init, q_goal, actors, margin):
             rospy.loginfo("Goal is blocked by static obstacles.")
             return None
 
