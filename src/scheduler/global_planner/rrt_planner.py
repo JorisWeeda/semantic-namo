@@ -21,15 +21,18 @@ class RRT:
 
     MAX_ITERATION_TIME = 300
 
-    def __init__(self, range_x, range_y, path_inflation):
+    OBS_SAFETY_MARGINS = 0.1
+
+    def __init__(self, range_x, range_y, mass_threshold, path_inflation):
         self.range_x = range_x
         self.range_y = range_y
 
+        self.mass_threshold = mass_threshold 
         self.path_inflation = path_inflation
 
-    def graph(self, q_init, q_goal, actors, intermediate_goal_check=True):
-        c_space = self.generate_polygons(actors, overwrite_inflation=0.1)
-        
+    def graph(self, q_init, q_goal, actors, intermediate_goal_check=True, margin=OBS_SAFETY_MARGINS):
+        c_space = self.generate_polygons(actors, overwrite_inflation=margin)
+
         q_init = np.array(q_init)
         q_goal = np.array(q_goal)
 
@@ -90,18 +93,23 @@ class RRT:
         return np.array([rand_x, rand_y])
 
     def generate_polygons(self, actors, overwrite_inflation=None):
-        overwrite_inflation = self.path_inflation if overwrite_inflation is None else overwrite_inflation
-        
+        inflation = self.path_inflation if overwrite_inflation is None else overwrite_inflation
+
         shapes = []
         actor_wrappers, actors_state = actors
         for actor in range(1, len(actor_wrappers)):
             actor_wrapper = actor_wrappers[actor]
 
+            if actor_wrapper.mass > self.mass_threshold:
+                active_inflation = self.path_inflation
+            else:
+                active_inflation = inflation
+
             obs_pos = actors_state[actor, :2]
             obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
 
-            inflated_size_x = actor_wrapper.size[0] + 2 * overwrite_inflation
-            inflated_size_y = actor_wrapper.size[1] + 2 * overwrite_inflation
+            inflated_size_x = actor_wrapper.size[0] + 2 * active_inflation
+            inflated_size_y = actor_wrapper.size[1] + 2 * active_inflation
 
             corners = np.array([[-inflated_size_x / 2, -inflated_size_y / 2],
                                 [inflated_size_x / 2, -inflated_size_y / 2],

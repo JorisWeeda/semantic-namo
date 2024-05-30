@@ -5,16 +5,17 @@ import yaml
 import networkx as nx
 import numpy as np
 
-from scheduler.global_planner import PRM, RRT
+from scheduler.global_planner import SRM, PRM, RRT
 
 
 class Scheduler:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-    def __init__(self, robot_goal_pos, prm_planner, rrt_planner):
+    def __init__(self, robot_goal_pos, srm_planner, prm_planner, rrt_planner):
         self.robot_goal_pos = robot_goal_pos
 
+        self.srm_planner = srm_planner
         self.prm_planner = prm_planner
         self.rrt_planner = rrt_planner
 
@@ -41,16 +42,20 @@ class Scheduler:
         mass_threshold = params['scheduler']['mass_threshold']
         path_inflation = params['scheduler']['path_inflation']
 
+        srm_planner = SRM(range_x, range_y, mass_threshold, path_inflation)
         prm_planner = PRM(range_x, range_y, mass_threshold, path_inflation)
-        rrt_planner = RRT(range_x, range_y, path_inflation)
+        rrt_planner = RRT(range_x, range_y, mass_threshold, path_inflation)
 
-        return cls(robot_goal_pos, prm_planner, rrt_planner)
+        return cls(robot_goal_pos, srm_planner, prm_planner, rrt_planner)
 
-    def generate_path(self, robot_dof, actors, mode='prm'):
-        q_init = (robot_dof[0], robot_dof[2])
+    def generate_path(self, robot_dof, actors, mode='srm'):
+        q_init = [robot_dof[0], robot_dof[2]]
         q_goal = self.robot_goal_pos
 
-        if mode == 'prm':
+        if mode == 'srm':
+            rospy.loginfo(f"Planning from {q_init} to {q_goal} using SRM.")
+            graph = self.srm_planner.graph(q_init, q_goal, actors)
+        elif mode == 'prm':
             rospy.loginfo(f"Planning from {q_init} to {q_goal} using PRM.")
             graph = self.prm_planner.graph(q_init, q_goal, actors)
         elif mode == 'rrt':
@@ -67,9 +72,8 @@ class Scheduler:
         goal_node = self.find_closest_node(graph, q_goal)
 
         try:
-            shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,
-                                                weight=lambda _, path_node, edge_data:
-                                                self.custom_weight_function(path_node, edge_data, graph))
+            shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,weight=lambda _, path_node, 
+                                             edge_data: self.custom_weight_function(path_node, edge_data, graph))
         except nx.exception.NetworkXNoPath:
             rospy.loginfo(f"Failed to create shortest path using {mode}.")
             return False, graph, np.empty((0, 3), dtype='float'), float(0)
@@ -86,12 +90,14 @@ class Scheduler:
         self.next += 1
         if self.next >= len(self.path):
             return None
+
         return self.path[self.next, :]
 
     def is_finished(self):
-        if self.path is not None and self.next is not None and self.next >= len(self.path):
+        if self.next is not None and self.next >= len(self.path):
+            self.path, self.next = None, None
             return True
-        
+
         return False
 
     @staticmethod
