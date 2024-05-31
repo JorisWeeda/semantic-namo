@@ -6,7 +6,6 @@ from motion import Dingo
 from scheduler import Objective
 
 import io
-import copy
 import rospy
 import roslib
 import torch
@@ -14,7 +13,7 @@ import yaml
 
 from functools import partial
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped, TwistStamped
 
 
 class PhysicalWorld:
@@ -39,6 +38,7 @@ class PhysicalWorld:
 
         self.robot_prev_msg = None
         self.robot_q_dot = torch.zeros(3)
+        self.robot_R = torch.zeros(2, 2)
         self.robot_q = torch.zeros(3)
 
         self._goal = None
@@ -83,7 +83,7 @@ class PhysicalWorld:
         rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
         rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
 
-        self.update_objective(self.robot_q, (0., 0.))
+        self.update_objective(self.robot_q.tolist(), (0., 0.))
 
     def create_additions(self):
         additions =[]
@@ -112,6 +112,7 @@ class PhysicalWorld:
     def run(self):
         if self.robot_prev_msg is not None:
             action = self.controller.compute_action(self.robot_q, self.robot_q_dot)
+            action[:2] = torch.matmul(self.robot_R.T, action[:2])
 
             if not self.is_goal_reached:
                 self.robot.move(*action)
@@ -119,8 +120,8 @@ class PhysicalWorld:
                 rospy.loginfo_throttle(1, "The goal is reached, no action applied to the robot.")
 
     def update_objective(self, goal, mode=[0, 0]):
-        self._goal = torch.tensor(copy.copy(goal))
-        self._mode = torch.tensor(copy.copy(mode))
+        self._goal = torch.tensor(goal)
+        self._mode = torch.tensor(mode)
 
         quaternions = self.yaw_to_quaternion(goal[2])
         q, q_dot = self.robot_q, self.robot_q_dot
@@ -139,14 +140,8 @@ class PhysicalWorld:
         if self._goal is None:
             return None
 
-        rob_yaw = self.robot_q[2]
-        rob_pos = self.robot_q[:2]
-
-        distance = torch.linalg.norm(rob_pos - self._goal[:2])
-        rotation = torch.abs(rob_yaw - self._goal[2])
-
         self.is_goal_reached = False
-        if distance < self.pos_tolerance and rotation < self.yaw_tolerance:
+        if torch.linalg.norm(self._goal[:2] - self.robot_q[:2]) < self.pos_tolerance :
             self.is_goal_reached = True
 
     def _cb_robot_state(self, msg):
@@ -171,11 +166,8 @@ class PhysicalWorld:
             cos_yaw = torch.cos(torch.tensor([curr_yaw]))
             sin_yaw = torch.sin(torch.tensor([curr_yaw]))
             self.robot_R = torch.tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]])
-
-            before_robot_xy_dot = torch.tensor([[linear_velocity[0]], [linear_velocity[1]]])
-            robot_xy_dot = torch.matmul(torch.transpose(self.robot_R, 0, 1), before_robot_xy_dot)
             
-            self.robot_q_dot = torch.tensor([*robot_xy_dot, angular_velocity])
+            self.robot_q_dot = torch.tensor([linear_velocity[0], linear_velocity[1], angular_velocity])
             
             self.check_goal_reached()
 

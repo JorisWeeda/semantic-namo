@@ -17,7 +17,7 @@ from shapely.geometry import Polygon
 from shapely.affinity import rotate
 
 from scipy.spatial.transform import Rotation
-from tf.transformations import quaternion_from_euler
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
 
 from isaacgym import gymapi
 
@@ -36,6 +36,7 @@ class SimulateWorld:
         self.pos_tolerance = params['controller']['pos_tolerance']
         self.yaw_tolerance = params['controller']['yaw_tolerance']
         self.vel_tolerance = params['controller']['vel_tolerance']
+        self.max_f_contact = params['controller']['max_f_contact']
 
         self._goal = None
         self._mode = None
@@ -74,11 +75,12 @@ class SimulateWorld:
 
         return cls(params, config, simulation, controller)
     
-    def configure(self):
-        if self.params["random"]:
-            additions = self.random_additions()
-        else:
-            additions = self.create_additions()
+    def configure(self, additions=None):
+        if additions is None:
+            if self.params["random"]:
+                additions = self.random_additions()
+            else:
+                additions = self.create_additions()
 
         self.simulation.add_to_envs(additions)
         self.controller.add_to_env(additions)
@@ -115,16 +117,10 @@ class SimulateWorld:
 
                 obstacle = {**obs_args, **obstacle[obs_type]}
 
-                init_ori = obstacle["init_pos"]
-                init_pos = obstacle["init_pos"]
+                rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
+                obstacle["init_ori"] = list(rot)
                 
-                init_ori = self.yaw_to_quaternion(np.deg2rad(init_ori[-1]))
-                
-                obstacle["init_ori"] = init_ori
-                obstacle["init_pos"] = init_pos
-
                 additions.append(obstacle)
-
         return additions
 
     def random_additions(self):        
@@ -150,7 +146,7 @@ class SimulateWorld:
 
         stationary_area_target = area * stationary_percentage
         adjustable_area_target = area * adjustable_percentage
-        
+
         current_stationary_area = 0.
         current_adjustable_area = 0.
 
@@ -164,7 +160,7 @@ class SimulateWorld:
 
             init_pos = [random_x, random_y, 0.5]            
             init_ori = self.yaw_to_quaternion(random_yaw)
-            
+
             obstacle["init_ori"] = init_ori
             obstacle["init_pos"] = init_pos
 
@@ -173,10 +169,10 @@ class SimulateWorld:
             obstacle["size"][1] = size_y + np.random.uniform(-stationary_size_noise * size_y, stationary_size_noise * size_y)
             obstacle["size"][2] = size_z + np.random.uniform(-stationary_size_noise * size_z, stationary_size_noise * size_z)
 
-            if not self.is_obstacle_overlapping(init_pos, init_ori, obstacle["size"], additions, excluded_poses):
+            if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori, additions, excluded_poses):
                 current_stationary_area += (obstacle["size"][0] * obstacle["size"][1])
                 additions.append(obstacle)
-            
+
         while current_adjustable_area < adjustable_area_target:
             obstacle = copy.deepcopy(self.params["objects"]["adjustable"])
             obstacle["name"] = f"Obstacle {len(additions)}"
@@ -196,13 +192,13 @@ class SimulateWorld:
             obstacle["size"][1] = size_y + np.random.uniform(-adjustable_size_noise * size_y, adjustable_size_noise * size_y)
             obstacle["size"][2] = size_z + np.random.uniform(-adjustable_size_noise * size_z, adjustable_size_noise * size_z)
 
-            if not self.is_obstacle_overlapping(init_pos, init_ori, obstacle["size"], additions, excluded_poses):
+            if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori, additions, excluded_poses):
                 current_adjustable_area += (obstacle["size"][0] * obstacle["size"][1])
                 additions.append(obstacle)
 
         return additions
 
-    def create_walls(self, thickness=0.1, height=0.5):
+    def create_walls(self, thickness=0.01, height=0.5):
         range_x = self.params["range_x"]
         range_y = self.params["range_y"]
 
@@ -249,7 +245,7 @@ class SimulateWorld:
 
         quaternions = self.yaw_to_quaternion(goal[2])
 
-        tensor_init = self.simulation.dof_state[0]
+        tensor_init = self.get_robot_dofs()
         tensor_goal = torch.tensor([goal[0], goal[1], 0., *quaternions])
         tensor_mode = torch.tensor([mode[0], mode[1]])
 
@@ -264,10 +260,17 @@ class SimulateWorld:
         self.controller.update_objective(bytes_init, bytes_goal, bytes_mode)
 
     def get_robot_dofs(self):
-        return self.simulation.dof_state[0]
+        return self.simulation.dof_state[0].tolist()
     
     def get_actor_states(self):
         return self.simulation.env_cfg, self.simulation.root_state[0, :, :]
+
+    def get_net_forces(self):
+        net_contact_forces = torch.sum(torch.abs(torch.cat((self.simulation.net_contact_force[:, 0].unsqueeze(1), self.simulation.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
+        number_of_bodies = int(net_contact_forces.size(dim=0) / self.simulation.num_envs)
+
+        reshaped_contact_forces = net_contact_forces.reshape([self.simulation.num_envs, number_of_bodies])
+        return torch.sum(reshaped_contact_forces, dim=1)[0]
 
     def get_elapsed_time(self):
         return self.simulation._gym.get_elapsed_time(self.simulation.sim)
@@ -287,18 +290,10 @@ class SimulateWorld:
 
         rob_dof = self.get_robot_dofs()
         rob_pos = np.array([rob_dof[0], rob_dof[2]])
-        distance = np.linalg.norm(rob_pos - self._goal[:2])
 
         self.is_goal_reached = False
-        if distance < self.pos_tolerance:
+        if torch.linalg.norm(self._goal[:2] - rob_pos) < self.pos_tolerance :
             self.is_goal_reached = True
-
-    def is_finished(self):
-        rob_dof = self.get_robot_dofs()
-
-        if all(vel <= self.vel_tolerance for vel in np.abs([rob_dof[1], rob_dof[3], rob_dof[5]])):
-            return True
-        return False
 
     @staticmethod
     def set_viewer(gym, viewer, position, target):
@@ -308,16 +303,21 @@ class SimulateWorld:
     def yaw_to_quaternion(yaw):
         return quaternion_from_euler(0., 0., yaw).tolist()
 
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]
 
     @staticmethod
-    def is_obstacle_overlapping(new_position, new_size, new_orientation, obstacles, excluded_poses, margin=0.2):
+    def is_obstacle_overlapping(new_position, new_size, new_orientation, obstacles, excluded_poses, margin=0.1):
         new_polygon = Polygon([
             (new_position[0] - new_size[0] / 2 - margin, new_position[1] - new_size[1] / 2 - margin),
             (new_position[0] + new_size[0] / 2 + margin, new_position[1] - new_size[1] / 2 - margin),
             (new_position[0] + new_size[0] / 2 + margin, new_position[1] + new_size[1] / 2 + margin),
             (new_position[0] - new_size[0] / 2 - margin, new_position[1] + new_size[1] / 2 + margin)
         ])
-        new_polygon = rotate(new_polygon, new_orientation[-1], origin=new_position)
+
+        yaw_new_polygon = np.rad2deg(SimulateWorld.quaternion_to_yaw(new_orientation))
+        new_polygon = rotate(new_polygon, yaw_new_polygon, origin=new_position)
 
         all_excluded_poses = list(obstacles) + list(excluded_poses)
         for excluded_pose in all_excluded_poses:
@@ -332,7 +332,9 @@ class SimulateWorld:
                 excluded_pose['init_pos'][1] + excluded_pose['size'][1] / 2 + margin)
             ])
 
-            obstacle_polygon = rotate(obstacle_polygon, excluded_pose['init_ori'][-1], origin=excluded_pose['init_pos'])
+            yaw_obstacle_polygon = np.rad2deg(SimulateWorld.quaternion_to_yaw(excluded_pose['init_ori']))
+            obstacle_polygon = rotate(obstacle_polygon, yaw_obstacle_polygon, origin=excluded_pose['init_pos'])
+        
             if new_polygon.intersects(obstacle_polygon):
                 return True
 

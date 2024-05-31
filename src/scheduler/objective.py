@@ -17,9 +17,9 @@ class Objective:
         self.u_max = torch.Tensor(u_max)
 
         self.w_con = np.diag([1.0, 1.0, 1.0])
-        self.w_dis = 40.0
-        self.w_rot = 20.0
-        self.w_int = 10.0
+        self.w_dis = 20.0
+        self.w_for = 20.0
+        self.w_rot = 5.00
 
     def reset(self):
         pass
@@ -27,13 +27,13 @@ class Objective:
     def compute_cost(self, sim, u):
         cost_distance_to_goal = self._distance_to_goal(sim)
         cost_rotation_to_goal = self._rotation_to_goal(sim)
-        cost_interact_to_goal = self._interact_to_goal(sim)
+        cost_contact_forces_to_goal = self._contact_forces_to_goal(sim)
 
         cost_high_control_vec = self._cost_control_vec(u)
 
         total_cost = self.w_dis * cost_distance_to_goal + \
                      self.w_rot * cost_rotation_to_goal + \
-                     self.w_int * cost_interact_to_goal + \
+                     self.w_for * cost_contact_forces_to_goal + \
                      cost_high_control_vec
 
         return total_cost
@@ -62,10 +62,10 @@ class Objective:
         rotation_norm_cost_per_env = torch.abs(tar_yaw - rob_yaw) / torch.pi
         return rotation_norm_cost_per_env
 
-    def _interact_to_goal(self, sim):
+    def _contact_forces_to_goal(self, sim):
         net_contact_forces = torch.sum(torch.abs(torch.cat((sim.net_contact_force[:, 0].unsqueeze(1), sim.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
         number_of_bodies = int(net_contact_forces.size(dim=0) / sim.num_envs)
-
+    
         reshaped_contact_forces = net_contact_forces.reshape([sim.num_envs, number_of_bodies])
         interaction_per_env = torch.sum(reshaped_contact_forces, dim=1)
 
