@@ -164,6 +164,7 @@ catkin_install_python(PROGRAMS
   scripts/environment
   scripts/visualisation
   tests/benchmark_global_planner
+  tests/benchmark_passage_nodes
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
