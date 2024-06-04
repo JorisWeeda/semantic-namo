@@ -5,17 +5,18 @@ import yaml
 import networkx as nx
 import numpy as np
 
-from scheduler.global_planner import SRM, PRM, RRT
+from scheduler.global_planner import NVG, SVG, PRM, RRT
 
 
 class Scheduler:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
 
-    def __init__(self, robot_goal_pos, srm_planner, prm_planner, rrt_planner):
+    def __init__(self, robot_goal_pos, nvg_planner, svg_planner, prm_planner, rrt_planner):
         self.robot_goal_pos = robot_goal_pos
 
-        self.srm_planner = srm_planner
+        self.nvg_planner = nvg_planner
+        self.svg_planner = svg_planner
         self.prm_planner = prm_planner
         self.rrt_planner = rrt_planner
 
@@ -42,19 +43,23 @@ class Scheduler:
         mass_threshold = params['scheduler']['mass_threshold']
         path_inflation = params['scheduler']['path_inflation']
 
-        srm_planner = SRM(range_x, range_y, mass_threshold, path_inflation)
+        nvg_planner = NVG(range_x, range_y, mass_threshold, path_inflation)
+        svg_planner = SVG(range_x, range_y, mass_threshold, path_inflation)
         prm_planner = PRM(range_x, range_y, mass_threshold, path_inflation)
         rrt_planner = RRT(range_x, range_y, mass_threshold, path_inflation)
 
-        return cls(robot_goal_pos, srm_planner, prm_planner, rrt_planner)
+        return cls(robot_goal_pos, nvg_planner, svg_planner, prm_planner, rrt_planner)
 
-    def generate_path(self, robot_dof, actors, mode='srm'):
+    def generate_path(self, robot_dof, actors, mode='svg'):
         q_init = [robot_dof[0], robot_dof[2]]
         q_goal = self.robot_goal_pos
 
-        if mode == 'srm':
-            rospy.loginfo(f"Planning from {q_init} to {q_goal} using SRM.")
-            graph = self.srm_planner.graph(q_init, q_goal, actors)
+        if mode == 'nvg':
+            rospy.loginfo(f"Planning from {q_init} to {q_goal} using nvg.")
+            graph = self.nvg_planner.graph(q_init, q_goal, actors)
+        elif mode == 'svg':
+            rospy.loginfo(f"Planning from {q_init} to {q_goal} using svg.")
+            graph = self.svg_planner.graph(q_init, q_goal, actors)
         elif mode == 'prm':
             rospy.loginfo(f"Planning from {q_init} to {q_goal} using PRM.")
             graph = self.prm_planner.graph(q_init, q_goal, actors)
@@ -63,7 +68,7 @@ class Scheduler:
             graph = self.rrt_planner.graph(q_init, q_goal, actors)
         else:
             raise TypeError(f'Mode {mode} not recognized as a global planner.')
-    
+
         if not graph or not any(np.linalg.norm(np.array(node[1]) - np.array(q_goal)) < 1e-6 for node in graph.nodes(data='pos')):
             rospy.loginfo(f"Failed to create graph using {mode}.")
             return False, graph, np.empty((0, 3), dtype='float'), float(0)

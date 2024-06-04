@@ -12,7 +12,7 @@ from shapely import buffer
 class PRM:
 
     MAX_ITERATION_TIME = 300
-    OBS_SAFETY_MARGINS = 0.1
+    OBS_SAFETY_MARGINS = 1e-2
 
     NEAREST_NEIGHBOURS = 4
     CONNECTING_NODES_R = 0.5
@@ -94,7 +94,7 @@ class PRM:
         return np.array([rand_x, rand_y, 0.])
 
     def generate_polygons(self, actors, overwrite_inflation=None):
-        margin = self.path_inflation if overwrite_inflation is None else overwrite_inflation
+        margin = overwrite_inflation if overwrite_inflation is not None else self.path_inflation
 
         shapes = []
         actor_wrappers, actors_state = actors
@@ -104,22 +104,23 @@ class PRM:
             mass = actor_wrapper.mass
             size = actor_wrapper.size
 
+            inflation = margin
             if mass > self.mass_threshold:
-                margin = self.path_inflation
+                inflation = self.path_inflation
 
             obs_pos = actors_state[actor, :2]
             obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
 
-            corners = Polygon([
+            corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
                 (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
                 (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
                 (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
-            ])
+            ]
 
             polygon = Polygon(corners)
             polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
-            polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
+            polygon = buffer(polygon, inflation, cap_style='flat', join_style='mitre')
 
             shapes.append(polygon) 
 
