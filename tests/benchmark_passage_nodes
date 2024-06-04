@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper # type: ignore
+
+import os
+import copy
+import rospy
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+
+import shapely
+from shapely import buffer
+from shapely.ops import nearest_points
+
+from datetime import datetime
+from tf.transformations import quaternion_from_euler
+from matplotlib.patches import Polygon
+from matplotlib import colors
+
+from scheduler import svg
+
+
+class Plotter:
+
+    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_polygon_plotter/'
+
+    def __init__(self):
+        self.svg = svg(range_x=(-10, 10), range_y=(-10, 10),mass_threshold=10, path_inflation=0.5)
+
+        self.data_folder = os.path.join(
+            os.path.expanduser('~'), self.DATA_FOLDER)
+        os.makedirs(self.data_folder, exist_ok=True)
+
+    def _create_file_path(self, name):
+        file_name = f"{name}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+        return os.path.join(self.data_folder, file_name)
+
+    def _plot_passage_scenarios(self, scenarios):
+        _, axs = plt.subplots(1, 4, figsize=(25, 5))
+
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.svg.mass_threshold)
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical', pad=0.05)
+        cbar.set_label('Mass')
+
+        for i, scenario in enumerate(scenarios):
+            actor_wrappers, actor_state = scenario['actor_wrappers'], scenario['actor_state']
+            actors = (actor_wrappers, actor_state)
+
+            polygons, masses = self.svg.generate_polygons(actors, 0)
+
+            passages = self.svg.generate_passages(polygons, masses,)
+
+            for name, polygon in polygons.items():
+                ax_polygon = Polygon(
+                    polygon.exterior.coords, color=cmap(norm(masses[name])))
+                axs[i].add_patch(ax_polygon)
+
+            axs[i].scatter(passages[:, 0], passages[:, 1], c='blue', label='Passage Node')
+
+            axs[i].legend()
+            axs[i].set_xlim(-2, 2)
+            axs[i].set_ylim(-2, 2)
+            axs[i].set_aspect('equal')
+            axs[i].set_title(f'Scenario {i + 1}')
+            axs[i].grid(True, alpha=0.25)
+
+        plt.show()
+
+    def plot_inflation_nodes(self):
+        hexagon_coords = [(0, 1), (0.866, 0.5), (0.866, -0.5),
+                          (0, -1), (-0.866, -0.5), (-0.866, 0.5)]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        inflated_hexagon = buffer(hexagon, self.svg.path_inflation, cap_style='flat', join_style='mitre')
+
+        _, axs = plt.subplots(1, 3, figsize=(25, 5))
+
+        ax_polygon = Polygon(hexagon.exterior.coords, color='grey', label='Obstacle')
+        axs[0].add_patch(copy.copy(ax_polygon))
+        axs[1].add_patch(copy.copy(ax_polygon))
+        axs[2].add_patch(copy.copy(ax_polygon))
+
+        axs[1].plot(*inflated_hexagon.exterior.xy, 'r--', alpha=1.0, label='Inflated Obstacle Boundary')
+        axs[2].plot(*inflated_hexagon.exterior.xy, 'r--', alpha=0.5, label='Inflated Obstacle Boundary')
+
+        margin_distance = np.vstack([hexagon.exterior.coords[0], inflated_hexagon.exterior.coords[0]])
+        axs[1].plot(margin_distance[:, 0], margin_distance[:, 1], c='red', alpha=0.8, label='Safety Margin (r)')
+
+        initial_nodes = self.svg.generate_nodes([inflated_hexagon])
+        axs[2].scatter(initial_nodes[:, 0], initial_nodes[:, 1], c='blue', label='Inflation Nodes')
+
+        for ax in axs:
+            ax.set_xlim(-5, 5)
+            ax.set_ylim(-5, 5)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.25)
+            ax.legend()
+
+        axs[0].set_title('Stage 1')
+        axs[1].set_title('Stage 2')
+        axs[2].set_title('Stage 3')
+        plt.show()
+
+    def plot_intersection_nodes(self):
+        hexagon_coords = [(np.cos(theta) - 1.5, np.sin(theta)) for theta in np.linspace(0, 2*np.pi, 7)]
+        squared_coords = [(x + 1., y) for (x, y) in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        squared = shapely.Polygon(squared_coords)
+
+        inflated_hexagon = buffer(hexagon, self.svg.path_inflation, cap_style='flat', join_style='mitre')
+        inflated_squared = buffer(squared, self.svg.path_inflation, cap_style='flat', join_style='mitre')
+
+        _, axs = plt.subplots(1, 3, figsize=(25, 5))
+
+        ax_hexagon = Polygon(hexagon.exterior.coords, color='grey', label='Obstacle 1')
+        ax_squared = Polygon(squared.exterior.coords, color='grey', label='Obstacle 2')
+
+        axs[0].add_patch(copy.copy(ax_hexagon))
+        axs[0].add_patch(copy.copy(ax_squared))
+        axs[1].add_patch(copy.copy(ax_hexagon))
+        axs[1].add_patch(copy.copy(ax_squared))
+        axs[2].add_patch(copy.copy(ax_hexagon))
+        axs[2].add_patch(copy.copy(ax_squared))
+
+        axs[1].plot(*inflated_hexagon.exterior.xy, color='red', linestyle='dashed', alpha=1.0, label='Inflated Obstacle 1 Boundary')
+        axs[1].plot(*inflated_squared.exterior.xy, color='orange', linestyle='dashed', alpha=1.0, label='Inflated Obstacle 2 Boundary')
+        
+        axs[2].plot(*inflated_hexagon.exterior.xy, color='red', linestyle='dashed', alpha=0.5, label='Inflated Obstacle 1 Boundary')
+        axs[2].plot(*inflated_squared.exterior.xy, color='orange', linestyle='dashed', alpha=0.5, label='Inflated Obstacle 2 Boundary')
+
+        intersection_nodes = self.svg.get_intersection_points([inflated_hexagon, inflated_squared], self.svg.range_x, self.svg.range_y)
+        axs[2].scatter(intersection_nodes[:, 0], intersection_nodes[:, 1], c='blue', label='Intersection Nodes')
+
+        for ax in axs:
+            ax.set_xlim(-5, 5)
+            ax.set_ylim(-5, 5)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.25)
+            ax.legend()
+
+        axs[0].set_title('Stage 1')
+        axs[1].set_title('Stage 2')
+        axs[2].set_title('Stage 3')
+        plt.show()
+
+    def plot_passage_nodes(self):
+        hexagon_coords = [(np.cos(theta) - 1.5, np.sin(theta)) for theta in np.linspace(0, 2*np.pi, 7)]
+        squared_coords = [(x + 1., y) for (x, y) in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        squared = shapely.Polygon(squared_coords)
+
+        shapes = {'obstacle 1': hexagon, 'obstacle 2': squared}
+        masses = {'obstacle 1': 8, 'obstacle 2': 5}
+
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.svg.mass_threshold)
+
+        _, axs = plt.subplots(1, 3, figsize=(25, 5))
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical', pad=0.05)
+        cbar.set_label('Mass')
+
+        ax_hexagon = Polygon(hexagon.exterior.coords, color=cmap(norm(8)), label='Obstacle 1')
+        ax_squared = Polygon(squared.exterior.coords, color=cmap(norm(5)), label='Obstacle 2')
+
+        axs[0].add_patch(copy.copy(ax_hexagon))
+        axs[0].add_patch(copy.copy(ax_squared))
+        axs[1].add_patch(copy.copy(ax_hexagon))
+        axs[1].add_patch(copy.copy(ax_squared))
+        axs[2].add_patch(copy.copy(ax_hexagon))
+        axs[2].add_patch(copy.copy(ax_squared))
+
+        nearest_point_hexagon, nearest_point_squared = nearest_points(hexagon, squared)
+        axs[0].scatter(nearest_point_hexagon.x, nearest_point_hexagon.y, s=20, c='red', label='Nearest Point Obstacle 1')
+        axs[0].scatter(nearest_point_squared.x, nearest_point_squared.y, s=20, c='orange', label='Nearest Point Obstacle 2')
+
+        shortest_line = shapely.shortest_line(hexagon, squared)
+        axs[1].plot(*shortest_line.coords.xy, c='blue', label='Shortest Line')
+
+        passage_node = self.svg.generate_passages(shapes, masses)
+        axs[2].scatter(passage_node[:, 0], passage_node[:, 1], c='blue', label='Passage Centroid')
+
+        for ax in axs:
+            ax.set_xlim(-5, 5)
+            ax.set_ylim(-5, 5)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.25)
+            ax.legend()
+
+        axs[0].set_title('Stage 1')
+        axs[1].set_title('Stage 2')
+        axs[2].set_title('Stage 3')
+        plt.show()
+
+    def plot_all_nodes(self):
+        hexagon_coords = [(np.cos(theta) - 1.5, np.sin(theta)) for theta in np.linspace(0, 2*np.pi, 7)]
+        squared_coords = [(x + 1., y) for (x, y) in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        squared = shapely.Polygon(squared_coords)
+
+        inflated_hexagon = buffer(hexagon, self.svg.path_inflation, cap_style='flat', join_style='mitre')
+        inflated_squared = buffer(squared, self.svg.path_inflation, cap_style='flat', join_style='mitre')
+
+        shapes = {'obstacle 1': hexagon, 'obstacle 2': squared}
+        masses = {'obstacle 1': 8, 'obstacle 2': 5}
+
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.svg.mass_threshold)
+
+        _, axs = plt.subplots(1, 4, figsize=(25, 5))
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical', pad=0.05)
+        cbar.set_label('Mass')
+
+        ax_hexagon = Polygon(hexagon.exterior.coords, color=cmap(norm(8)), label='Obstacle 1')
+        ax_squared = Polygon(squared.exterior.coords, color=cmap(norm(5)), label='Obstacle 2')
+
+        axs[0].add_patch(copy.copy(ax_hexagon))
+        axs[0].add_patch(copy.copy(ax_squared))
+        axs[1].add_patch(copy.copy(ax_hexagon))
+        axs[1].add_patch(copy.copy(ax_squared))
+        axs[2].add_patch(copy.copy(ax_hexagon))
+        axs[2].add_patch(copy.copy(ax_squared))
+        axs[3].add_patch(copy.copy(ax_hexagon))
+        axs[3].add_patch(copy.copy(ax_squared))
+
+        initial_nodes = self.svg.generate_nodes([inflated_hexagon, inflated_squared])
+        axs[0].scatter(initial_nodes[:, 0], initial_nodes[:, 1], c='blue', label='Inflation Nodes')
+        axs[3].scatter(initial_nodes[:, 0], initial_nodes[:, 1], c='blue', label='Nodes')
+
+        intersection_nodes = self.svg.get_intersection_points([inflated_hexagon, inflated_squared], self.svg.range_x, self.svg.range_y)
+        axs[1].scatter(intersection_nodes[:, 0], intersection_nodes[:, 1], c='blue', label='Intersection Nodes')
+        axs[3].scatter(intersection_nodes[:, 0], intersection_nodes[:, 1], c='blue')
+
+        passage_node = self.svg.generate_passages(shapes, masses)
+        axs[2].scatter(passage_node[:, 0], passage_node[:, 1], c='blue', label='Passage Centroid')
+        axs[3].scatter(passage_node[:, 0], passage_node[:, 1], c='blue')
+
+        for ax in axs:
+            ax.set_xlim(-5, 5)
+            ax.set_ylim(-5, 5)
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.25)
+            ax.legend()
+
+        axs[0].set_title('Inflation Nodes')
+        axs[1].set_title('Intersection nodes')
+        axs[2].set_title('Passage Nodes')
+        axs[3].set_title('All nodes')
+
+        plt.show()
+
+    def generate_scenarios(self):
+        scenarios = [
+            {
+                'actor_wrappers': [
+                    ActorWrapper('robot', name='Robot',
+                                 mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 1', mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 2', mass=5, size=(1.0, 1.0))
+                ],
+                'actor_state': torch.Tensor([
+                    [0., 0., 0., *quaternion_from_euler(0., 0., 0.)],
+                    [-.8, 0, 0., *quaternion_from_euler(0., 0., 0.)],
+                    [.8, 0., 0., *quaternion_from_euler(0., 0., 0.)]
+                ])
+            },
+            {
+                'actor_wrappers': [
+                    ActorWrapper('robot', name='Robot',
+                                 mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 1', mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 2', mass=10, size=(1.0, 1.0))
+                ],
+                'actor_state': torch.Tensor([
+                    [0., 0., 0., *quaternion_from_euler(0., 0., 0.)],
+                    [-.8, 0, 0., *
+                        quaternion_from_euler(0., 0., 45 / 180 * np.pi)],
+                    [.8, 0., 0., *
+                        quaternion_from_euler(0., 0., 10 / 180 * np.pi)]
+                ])
+            },
+            {
+                'actor_wrappers': [
+                    ActorWrapper('robot', name='Robot',
+                                 mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 1', mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 2', mass=10, size=(1.0, 2.5))
+                ],
+                'actor_state': torch.Tensor([
+                    [0., 0., 0., *quaternion_from_euler(0., 0., 0.)],
+                    [-.8, -1, 0., *quaternion_from_euler(0., 0., 0.)],
+                    [.8, -.5, 0., *quaternion_from_euler(0., 0., 0.)]
+                ])
+            },
+            {
+                'actor_wrappers': [
+                    ActorWrapper('robot', name='Robot',
+                                 mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 1', mass=5, size=(1.0, 1.0)),
+                    ActorWrapper('box', name='Obs 2', mass=10, size=(1.0, 2.5))
+                ],
+                'actor_state': torch.Tensor([
+                    [0., 0., 0., *quaternion_from_euler(0., 0., 0.)],
+                    [-.8, -1, 0., *
+                        quaternion_from_euler(0., 0., 10 / 180 * np.pi)],
+                    [0.8, -.5, 0., *quaternion_from_euler(0., 0., 0.)]
+                ])
+            },
+        ]
+
+        self._plot_passage_scenarios(scenarios)
+
+
+if __name__ == "__main__":
+    rospy.init_node('polygon_plotter_node')
+
+    plotter = Plotter()
+
+    # plotter.plot_obstacle_nodes()
+    # plotter.plot_intersection_nodes()
+    # plotter.plot_passage_nodes()
+    # plotter.plot_all_nodes()
+
+    plotter.generate_scenarios()
