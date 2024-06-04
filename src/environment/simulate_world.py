@@ -13,6 +13,7 @@ import zerorpc
 
 import numpy as np
 
+import shapely
 from shapely.geometry import Polygon
 from shapely.affinity import rotate
 
@@ -289,10 +290,11 @@ class SimulateWorld:
             return None
 
         rob_dof = self.get_robot_dofs()
-        rob_pos = np.array([rob_dof[0], rob_dof[2]])
+        rob_pos = torch.Tensor([rob_dof[0], rob_dof[2]])
+        xy_goal = torch.Tensor(self._goal[:2])
 
         self.is_goal_reached = False
-        if torch.linalg.norm(self._goal[:2] - rob_pos) < self.pos_tolerance :
+        if torch.linalg.norm(xy_goal - rob_pos) < self.pos_tolerance :
             self.is_goal_reached = True
 
     @staticmethod
@@ -310,32 +312,34 @@ class SimulateWorld:
     @staticmethod
     def is_obstacle_overlapping(new_position, new_size, new_orientation, obstacles, excluded_poses, margin=0.1):
         new_polygon = Polygon([
-            (new_position[0] - new_size[0] / 2 - margin, new_position[1] - new_size[1] / 2 - margin),
-            (new_position[0] + new_size[0] / 2 + margin, new_position[1] - new_size[1] / 2 - margin),
-            (new_position[0] + new_size[0] / 2 + margin, new_position[1] + new_size[1] / 2 + margin),
-            (new_position[0] - new_size[0] / 2 - margin, new_position[1] + new_size[1] / 2 + margin)
+                (new_position[0] - new_size[0] / 2, new_position[1] - new_size[1] / 2),
+                (new_position[0] + new_size[0] / 2, new_position[1] - new_size[1] / 2),
+                (new_position[0] + new_size[0] / 2, new_position[1] + new_size[1] / 2),
+                (new_position[0] - new_size[0] / 2, new_position[1] + new_size[1] / 2)
         ])
 
-        yaw_new_polygon = np.rad2deg(SimulateWorld.quaternion_to_yaw(new_orientation))
-        new_polygon = rotate(new_polygon, yaw_new_polygon, origin=new_position)
+        yaw = np.rad2deg(SimulateWorld.quaternion_to_yaw(new_orientation))
+        new_polygon = rotate(new_polygon, yaw)
+        new_polygon = shapely.buffer(new_polygon, margin, cap_style='flat', join_style='mitre')
 
         all_excluded_poses = list(obstacles) + list(excluded_poses)
         for excluded_pose in all_excluded_poses:
-            obstacle_polygon = Polygon([
-                (excluded_pose['init_pos'][0] - excluded_pose['size'][0] / 2 - margin,
-                excluded_pose['init_pos'][1] - excluded_pose['size'][1] / 2 - margin),
-                (excluded_pose['init_pos'][0] + excluded_pose['size'][0] / 2 + margin,
-                excluded_pose['init_pos'][1] - excluded_pose['size'][1] / 2 - margin),
-                (excluded_pose['init_pos'][0] + excluded_pose['size'][0] / 2 + margin,
-                excluded_pose['init_pos'][1] + excluded_pose['size'][1] / 2 + margin),
-                (excluded_pose['init_pos'][0] - excluded_pose['size'][0] / 2 - margin,
-                excluded_pose['init_pos'][1] + excluded_pose['size'][1] / 2 + margin)
+            obs_pos = excluded_pose['init_pos']
+            obs_yaw = np.rad2deg(SimulateWorld.quaternion_to_yaw(excluded_pose['init_ori']))
+            obs_size = excluded_pose['size']
+
+            corners = Polygon([
+                (obs_pos[0] - obs_size[0] / 2, obs_pos[1] - obs_size[1] / 2),
+                (obs_pos[0] + obs_size[0] / 2, obs_pos[1] - obs_size[1] / 2),
+                (obs_pos[0] + obs_size[0] / 2, obs_pos[1] + obs_size[1] / 2),
+                (obs_pos[0] - obs_size[0] / 2, obs_pos[1] + obs_size[1] / 2)
             ])
 
-            yaw_obstacle_polygon = np.rad2deg(SimulateWorld.quaternion_to_yaw(excluded_pose['init_ori']))
-            obstacle_polygon = rotate(obstacle_polygon, yaw_obstacle_polygon, origin=excluded_pose['init_pos'])
-        
-            if new_polygon.intersects(obstacle_polygon):
+            obstacle = Polygon(corners)
+            obstacle = rotate(obstacle, obs_yaw)
+            obstacle = shapely.buffer(obstacle, margin, cap_style='flat', join_style='mitre')
+
+            if new_polygon.intersects(obstacle):
                 return True
 
         return False

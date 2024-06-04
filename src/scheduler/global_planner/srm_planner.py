@@ -8,7 +8,9 @@ import networkx as nx
 
 from itertools import combinations
 
-from shapely.geometry import Point, LineString, Polygon
+from shapely import buffer, prepare
+from shapely.affinity import rotate
+from shapely.geometry import Point, MultiPoint, LineString, Polygon
 from shapely.ops import nearest_points
 
 
@@ -52,7 +54,7 @@ class SRM:
         stationary_polygons = {name: polygon for name, polygon in inflated_shapes.items() if masses[name] >= self.mass_threshold}
         adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] < self.mass_threshold}
 
-        passages = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses, self.path_inflation)
+        passages = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
         graph = self.add_passages_to_graph(graph, passages)
 
         return graph
@@ -102,7 +104,7 @@ class SRM:
         return graph
 
     def generate_polygons(self, actors, overwrite_inflation=None):
-        overwrite_inflation = self.path_inflation if overwrite_inflation is None else overwrite_inflation
+        margin = self.path_inflation if overwrite_inflation is None else overwrite_inflation
         
         masses, shapes = {}, {}
 
@@ -112,26 +114,23 @@ class SRM:
 
             mass = actor_wrapper.mass
             name = actor_wrapper.name
+            size = actor_wrapper.size
 
             obs_pos = actors_state[actor, :2]
             obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
 
-            inflated_size_x = actor_wrapper.size[0] + 2 * overwrite_inflation
-            inflated_size_y = actor_wrapper.size[1] + 2 * overwrite_inflation
+            corners = Polygon([
+                (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+            ])
 
-            corners = np.array([[-inflated_size_x / 2, -inflated_size_y / 2],
-                                [inflated_size_x / 2, -inflated_size_y / 2],
-                                [inflated_size_x / 2, inflated_size_y / 2],
-                                [-inflated_size_x / 2, inflated_size_y / 2],
-                                [-inflated_size_x / 2, -inflated_size_y / 2]])
+            polygon = Polygon(corners)
+            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
 
-            rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
-                                        [np.sin(obs_rot), np.cos(obs_rot)]])
-
-            rotate_corners = np.dot(corners, rotation_matrix)
-            translate_corners = np.add(rotate_corners, obs_pos)
-
-            shapes[name] = Polygon(translate_corners)
+            shapes[name] = polygon
             masses[name] = mass
 
         return shapes, masses
@@ -154,30 +153,28 @@ class SRM:
 
         return nodes
 
-    def generate_passages(self, shapes, masses, inflation):
+    def generate_passages(self, shapes, masses):
         passages = np.empty((0, 4), dtype='float')
 
-        id_pairs = self.find_close_pairs(shapes, (2 * inflation))
-        for id_1, id_2 in id_pairs:
+        obstacles_id_pairs = list(combinations(shapes.keys(), 2))
+        for id_1, id_2 in obstacles_id_pairs:
             if masses[id_1] >= self.mass_threshold and masses[id_2] >= self.mass_threshold:
                 continue
-
+            
             heavy_id, light_id = [id_1, id_2] if masses[id_1] >= masses[id_2] else [id_2, id_1]
             heavy_ob, light_ob = shapes[heavy_id], shapes[light_id]
 
-            point_heavy_ob, point_light_ob = nearest_points(heavy_ob.boundary, light_ob.boundary)
+            if heavy_ob.distance(light_ob) > (2 * self.path_inflation):
+                continue
 
-            passage_center_x = (point_heavy_ob.x + point_light_ob.centroid.x) / 2
-            passage_center_y = (point_heavy_ob.y + point_light_ob.centroid.y) / 2
-            passage_centroid = Point(passage_center_x, passage_center_y) 
+            prepare(light_ob)
+            prepare(heavy_ob)
 
-            point_centroid_light_ob, point_closest_heavy_ob = nearest_points(light_ob.centroid, heavy_ob.boundary)
-
-            centroid_line = LineString([point_centroid_light_ob, point_closest_heavy_ob])
-            nearest_point = centroid_line.interpolate(centroid_line.project(passage_centroid))
+            passage = nearest_points(light_ob, heavy_ob)
+            passage_point = MultiPoint(passage).centroid
 
             search_distance = self.search_distance_radius(light_ob)
-            passages = np.vstack((passages, (nearest_point.x, nearest_point.y, masses[light_id], search_distance)))
+            passages = np.vstack((passages, (passage_point.x, passage_point.y, masses[light_id], search_distance)))
 
         return passages
 
@@ -198,21 +195,10 @@ class SRM:
         for i, polygon_i in enumerate(polygons):
             for j, polygon_j in enumerate(polygons):
                 if i != j:
-                    intersection = polygon_i.intersection(polygon_j)
-
-                    if isinstance(intersection, Point):
-                        if x_limit[0] <= intersection.x <= x_limit[1] and y_limit[0] <= intersection.y <= y_limit[1]:
-                            intersection_points.append([intersection.x, intersection.y])
-
-                    elif isinstance(intersection, LineString):
-                        for point in intersection.coords:
-                            if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append([point[0], point[1]])
-
-                    elif isinstance(intersection, Polygon):
-                        for point in intersection.exterior.coords:
-                            if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append([point[0], point[1]])
+                    intersection = polygon_i.boundary.intersection(polygon_j.boundary)
+                    for point in intersection.geoms:
+                        if x_limit[0] <= point.x <= x_limit[1] and y_limit[0] <= point.y <= y_limit[1]:
+                            intersection_points.append([point.x, point.y])
 
         return np.array(intersection_points)
 
@@ -247,19 +233,6 @@ class SRM:
 
         filtered_nodes = np.array(filtered_nodes)
         return np.unique(filtered_nodes, axis=0)
-
-    @staticmethod
-    def find_close_pairs(shapes, threshold):
-        passage_pairs = []
-
-        obstacles_id_pairs = list(combinations(shapes.keys(), 2))
-        for id_1, id_2 in obstacles_id_pairs:
-            obstacle_1, obstacle_2 = shapes[id_1], shapes[id_2]
-
-            if obstacle_1.boundary.distance(obstacle_2.boundary) < threshold:
-                passage_pairs.append((id_1, id_2))
-
-        return np.array(passage_pairs)
 
     @staticmethod
     def add_passages_to_graph(graph, passages, shapes=None):

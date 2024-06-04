@@ -5,6 +5,8 @@ import numpy as np
 import networkx as nx
 
 from shapely.geometry import Point, LineString, Polygon
+from shapely.affinity import rotate
+from shapely import buffer
 
 
 class PRM:
@@ -92,37 +94,35 @@ class PRM:
         return np.array([rand_x, rand_y, 0.])
 
     def generate_polygons(self, actors, overwrite_inflation=None):
-        inflation = self.path_inflation if overwrite_inflation is None else overwrite_inflation
+        margin = self.path_inflation if overwrite_inflation is None else overwrite_inflation
 
         shapes = []
         actor_wrappers, actors_state = actors
         for actor in range(1, len(actor_wrappers)):
             actor_wrapper = actor_wrappers[actor]
-            
-            if actor_wrapper.mass > self.mass_threshold:
-                active_inflation = self.path_inflation
-            else:
-                active_inflation = inflation
+
+            mass = actor_wrapper.mass
+            size = actor_wrapper.size
+
+            if mass > self.mass_threshold:
+                margin = self.path_inflation
 
             obs_pos = actors_state[actor, :2]
             obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
 
-            inflated_size_x = actor_wrapper.size[0] + 2 * active_inflation
-            inflated_size_y = actor_wrapper.size[1] + 2 * active_inflation
+            corners = Polygon([
+                (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+            ])
 
-            corners = np.array([[-inflated_size_x / 2, -inflated_size_y / 2],
-                                [inflated_size_x / 2, -inflated_size_y / 2],
-                                [inflated_size_x / 2, inflated_size_y / 2],
-                                [-inflated_size_x / 2, inflated_size_y / 2],
-                                [-inflated_size_x / 2, -inflated_size_y / 2]])
+            polygon = Polygon(corners)
+            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
 
-            rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
-                                        [np.sin(obs_rot), np.cos(obs_rot)]])
+            shapes.append(polygon) 
 
-            rotate_corners = np.dot(corners, rotation_matrix)
-            translate_corners = np.add(rotate_corners, obs_pos)
-
-            shapes.append(Polygon(translate_corners)) 
         return shapes
 
     def generate_nodes(self, polygons):
