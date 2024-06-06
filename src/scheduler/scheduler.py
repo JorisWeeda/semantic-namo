@@ -77,8 +77,8 @@ class Scheduler:
         goal_node = self.find_closest_node(graph, q_goal)
 
         try:
-            shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,weight=lambda _, path_node, 
-                                             edge_data: self.custom_weight_function(path_node, edge_data, graph))
+            shortest_path = nx.astar_path(graph, source=init_node, target=goal_node,weight=lambda _, path_node, 
+                                          edge_data: self.custom_weight_function(path_node, edge_data, graph))
         except nx.exception.NetworkXNoPath:
             rospy.loginfo(f"Failed to create shortest path using {mode}.")
             return False, graph, np.empty((0, 3), dtype='float'), float(0)

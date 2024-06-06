@@ -43,13 +43,13 @@ class SVG:
             pass
 
         non_inflated_shapes, masses = self.generate_polygons(actors, 0.)
-        
+
         stationary_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] >= self.mass_threshold}
         adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] < self.mass_threshold}
 
         passage_nodes = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
-            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values())
+            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values(), knn=5)
 
         return graph
 
