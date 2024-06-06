@@ -4,7 +4,7 @@ description: "Navigation Among Movable Obstacles: Simulated Approach"
 range_x: [-4.0, 4.0]
 range_y: [-4.0, 4.0]
 
-goal: [-3., 0.]
+goal: [0., 0.]
 
 camera:
     pos: [-6., 0., 5.]
@@ -12,4 +12,4 @@ camera:
 
 environment:
     robot:
-        init_state: [-3.5, 2.2, 0.0]
+        init_state: [0., 0., 0.]
