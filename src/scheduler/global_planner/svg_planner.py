@@ -157,7 +157,8 @@ class SVG:
             else:
                 passage_point = light_point
 
-            passages = np.vstack((passages, (passage_point.x, passage_point.y, masses[light_id])))
+            passage_cost = (2*self.path_inflation - line_segment.length) * masses[light_id]
+            passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost)))
         return passages
 
     @staticmethod

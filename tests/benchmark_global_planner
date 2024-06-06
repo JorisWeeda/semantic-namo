@@ -37,7 +37,7 @@ class BenchmarkGlobalPlanner:
     USE_NVG = True
     USE_SVG = True
     USE_PRM = False
-    USE_RRT = False
+    USE_RRT = True
 
     RUN_SIM = False
 
