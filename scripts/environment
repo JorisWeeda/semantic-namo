@@ -7,8 +7,9 @@ import hydra
 import rospy
 import time
 import pandasgui
-
 import numpy as np
+
+from isaacgym import gymapi
 
 from environment import SimulateWorld, PhysicalWorld
 from scheduler import Scheduler
@@ -46,13 +47,15 @@ if __name__ == "__main__":
 
     monitor.start_monitoring()
 
+    rate = rospy.Rate(1 / world.config['isaacgym']['dt'])
+
     start_time = time.time()
     while not rospy.is_shutdown():
         loop_start_time = time.time()
 
-        if (time.time() - start_time >= 5) and scheduler.path is None:
+        if (time.time() - start_time >= 2) and scheduler.path is None:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
-            res, graph, path, _ = scheduler.generate_path(robot_dof, actors)
+            res, graph, path, _ = scheduler.generate_path(robot_dof, actors, mode='nvg')
             if res:
                 dashboard.update_planning(actors, path, graph)
 
@@ -64,24 +67,16 @@ if __name__ == "__main__":
     
         action = world.run()
 
-        if use_dashboard:
-            all_rollout_states = world.get_rollout_states()
-            best_rollout_state = world.get_rollout_best_state()
-            dashboard.update_rollouts(all_rollout_states, best_rollout_state)
-
-            robot_dofs = world.get_robot_dofs()
-            dashboard.update_progress(robot_dofs, world.goal)
-
-            actors, states = world.get_actor_states()
-            dashboard.update_overview(actors, states)
-
         monitor.step_monitoring()
 
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.numpy())
 
-        if scheduler.is_finished() and world.is_finished():
+        if scheduler.is_finished() and world.is_goal_reached:
             break
+
+        if (time.time() - loop_start_time) > (1.0 / rate.sleep_dur.to_sec()):
+            rospy.logwarn(f"Loop rate frequency not met.")
 
     if is_simulation:
         world.destroy()

@@ -21,7 +21,7 @@ def controller(config: ExampleConfig):
 
     objective = Objective(config["mppi"].u_min, config["mppi"].u_max)
 
-    mppi_controller = zerorpc.Server(MPPIisaacPlanner(config, objective, None))
+    mppi_controller = zerorpc.Server(MPPIisaacPlanner(config, objective, None), heartbeat=None)
     mppi_controller.bind("tcp://0.0.0.0:4242")
 
     def signal_handler(*args):
