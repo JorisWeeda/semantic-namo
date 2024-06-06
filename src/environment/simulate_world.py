@@ -71,7 +71,7 @@ class SimulateWorld:
 
         params = {**base_config, **world_config}
 
-        controller = zerorpc.Client()
+        controller = zerorpc.Client(timeout=None, heartbeat=None)
         controller.connect("tcp://127.0.0.1:4242")
 
         return cls(params, config, simulation, controller)
@@ -199,6 +199,42 @@ class SimulateWorld:
 
         return additions
 
+    def grid_additions(self):
+        additions = self.create_walls()
+
+        range_x = self.params['range_x']
+        range_y = self.params['range_y']
+
+        obstacle_size =self.params["objects"]["adjustable"]['size']
+
+        inflation = self.params["scheduler"]["path_inflation"]
+        init_pose = self.params["environment"]["robot"]["init_state"]
+        goal_pose = self.params["goal"]
+
+        excluded_poses = ({'init_pos': init_pose, 'init_ori': [0., 0., 0.], 'size': [inflation, inflation]},
+                          {'init_pos': goal_pose, 'init_ori': [0., 0., 0.], 'size': [inflation, inflation]})
+
+        start_x, end_x = range_x[0] + obstacle_size[0], range_x[1]
+        start_y, end_y = range_y[0] + obstacle_size[1], range_y[1]
+
+        for x in np.arange(start_x, end_x, inflation + obstacle_size[0]):
+            for y in np.arange(start_y, end_y, inflation + obstacle_size[1]):
+                obstacle = copy.deepcopy(self.params["objects"]["adjustable"])
+                obstacle["name"] = f"Obstacle {len(additions)}"
+
+                random_yaw = random.uniform(-np.pi, np.pi)
+
+                init_pos = [x, y, 0.5]
+                init_ori = self.yaw_to_quaternion(random_yaw)
+
+                obstacle["init_pos"] = init_pos
+                obstacle["init_ori"] = init_ori
+
+                if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori, additions, excluded_poses, margin=0.):
+                    additions.append(obstacle)
+
+        return additions
+
     def create_walls(self, thickness=0.01, height=0.5):
         range_x = self.params["range_x"]
         range_y = self.params["range_y"]
@@ -209,6 +245,7 @@ class SimulateWorld:
             wall["size"] = size
             wall["init_pos"] = init_pos
             wall["init_ori"] = self.yaw_to_quaternion(init_ori[-1])
+
             return wall
 
         walls = []
@@ -271,7 +308,7 @@ class SimulateWorld:
         number_of_bodies = int(net_contact_forces.size(dim=0) / self.simulation.num_envs)
 
         reshaped_contact_forces = net_contact_forces.reshape([self.simulation.num_envs, number_of_bodies])
-        return torch.sum(reshaped_contact_forces, dim=1)[0]
+        return torch.sum(reshaped_contact_forces, dim=1)[0].tolist()
 
     def get_elapsed_time(self):
         return self.simulation._gym.get_elapsed_time(self.simulation.sim)
@@ -284,6 +321,7 @@ class SimulateWorld:
 
     def destroy(self):
         self.simulation.stop_sim()
+        self.controller.stop_sim()
 
     def check_goal_reached(self):
         if self._goal is None:
