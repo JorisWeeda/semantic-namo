@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
         if (time.time() - start_time >= 2) and scheduler.path is None:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
-            res, graph, path, _ = scheduler.generate_path(robot_dof, actors, mode='nvg')
+            res, graph, path, _ = scheduler.generate_path(robot_dof, actors, mode='svg')
             if res:
                 dashboard.update_planning(actors, path, graph)
 

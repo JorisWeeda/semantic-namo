@@ -1,10 +1,12 @@
 import roslib
 import yaml
+import shapely
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from matplotlib.patches import Polygon
+from shapely.affinity import rotate
 
 from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
@@ -87,26 +89,25 @@ class Dashboard:
         self.ax_2.clear()
 
         for actor, state in zip(*actors):
-            position, orientation = state[:3], state[3:7]
+            if actor.fixed:
+                continue
 
-            size_x, size_y, _ = actor.size
-            obs_pos = position[:2]
+            size = actor.size
+            obs_pos = state[:2]
+            obs_rot = quaternion_to_yaw(state[3:7])
 
-            corners = np.array([[-size_x / 2, -size_y / 2],
-                                [size_x / 2, -size_y / 2],
-                                [size_x / 2, size_y / 2],
-                                [-size_x / 2, size_y / 2],
-                                [-size_x / 2, -size_y / 2]])
+            corners = [
+                (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+            ]
 
-            obs_rot = quaternion_to_yaw(orientation)
-            rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
-                                        [np.sin(obs_rot), np.cos(obs_rot)]])
+            polygon = shapely.Polygon(corners)
+            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
 
-            rotate_corners = np.dot(corners, rotation_matrix)
-            translate_corners = np.add(rotate_corners, obs_pos)
-
-            polygon = Polygon(translate_corners, closed=True, color=actor.color)
-            self.ax_2.add_patch(polygon)
+            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=actor.color)
+            self.ax_2.add_patch(patch_polygon)
 
         nodes = np.array([(*data['pos'], data['cost']) for _, data in graph.nodes(data=True)])
         edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v, _ in graph.edges(data=True)])
@@ -130,7 +131,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(1)
+        plt.pause(5)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:

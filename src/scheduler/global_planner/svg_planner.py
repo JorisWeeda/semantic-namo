@@ -25,7 +25,7 @@ class SVG:
     
     def graph(self, q_init, q_goal, actors):
         actor_polygons, _ = self.generate_polygons(actors)
-        avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - 1e-2)
+        avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - 1e-3)
 
         graph = nx.Graph()
         self.add_node_to_graph(graph, (*q_init, 0.), avoid_obstacle.values())
@@ -49,7 +49,7 @@ class SVG:
 
         passage_nodes = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
-            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values(), knn=5)
+            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values(), knn=4)
 
         return graph
 
@@ -128,7 +128,7 @@ class SVG:
 
         return nodes
 
-    def generate_passages(self, shapes, masses):
+    def generate_passages(self, shapes, masses, margin=1e-3):
         passages = np.empty((0, 3), dtype='float')
 
         obstacles_id_pairs = list(combinations(shapes.keys(), 2))
@@ -142,11 +142,20 @@ class SVG:
             if heavy_ob.distance(light_ob) > (2 * self.path_inflation):
                 continue
 
+            light_ob = buffer(light_ob, margin, cap_style='flat', join_style='mitre')
+            heavy_ob = buffer(heavy_ob, margin, cap_style='flat', join_style='mitre')
+
             prepare(light_ob)
             prepare(heavy_ob)
 
             passage = nearest_points(light_ob, heavy_ob)
-            passage_point = MultiPoint(passage).centroid
+            light_point, heavy_point = passage[0], passage[1]
+
+            line_segment = LineString([heavy_point, light_point])
+            if line_segment.length > self.path_inflation:
+                passage_point = line_segment.interpolate(self.path_inflation)
+            else:
+                passage_point = light_point
 
             passages = np.vstack((passages, (passage_point.x, passage_point.y, masses[light_id])))
         return passages
