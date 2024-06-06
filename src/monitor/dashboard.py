@@ -37,6 +37,7 @@ class Dashboard:
         range_y = params['range_y']
 
         plt.ion()
+        plt.show()
 
         return cls(range_x, range_y)
 
@@ -129,7 +130,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(5)
+        plt.pause(1)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:
