@@ -25,15 +25,21 @@ from scheduler import Scheduler
 matplotlib.use('Agg')
 
 
-
 class BenchmarkGlobalPlanner:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
 
-    DIMENSION_ROOM_LIMITS = [2, 20]
-    OBS_PERCENTAGE_LIMITS = [0, 20]
+    DIMENSION_ROOM = [2, 5, 10]
+    ROOM_ITERATION = 100
 
     MAX_EXEC_DURATION = 600
+
+    USE_NVG = True
+    USE_SVG = True
+    USE_PRM = False
+    USE_RRT = False
+
+    RUN_SIM = False
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world
@@ -63,96 +69,9 @@ class BenchmarkGlobalPlanner:
         return cls(gym_world, scheduler, layout, config, file_path)
 
     def run_global_planners(self):
-        for x in range(*self.DIMENSION_ROOM_LIMITS, 1):
-            for y in range(*self.DIMENSION_ROOM_LIMITS, 1):
-                for percentage in range(*self.OBS_PERCENTAGE_LIMITS, 1):
-                    self.gym_world.params['stationary_percentage'] = 0.01
-                    self.gym_world.params['adjustable_percentage'] = percentage / 100
-
-                    rospy.loginfo(f'Creating environment (x:{x} y:{y}) and adjustable percentage: {percentage / 100}')
-                    additions, actors, configurations = self.initiate_random_world(x, y)
-                    self.reset_robot()
-
-                    robot_dof = self.gym_world.get_robot_dofs()
-                    q_init = (robot_dof[0], robot_dof[2])
-                    q_goal = self.scheduler.robot_goal_pos
-
-                    name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
-                    configurations["ID"] = name
-
-                    if rospy.is_shutdown():
-                        break
-
-                    rospy.loginfo(f'Running NVG global planner on environment.')
-                    nvg_result, nvg_graph, nvg_time, nvg_path, nvg_cost = self.run_path_planner(actors, 'nvg')
-
-                    rospy.loginfo(f'Executing NVG path in environment.')
-                    run_nvg_result, run_nvg_time, run_nvg_force = self.run_trajectory(nvg_result, additions)
-
-                    configurations["nvg_result"] = nvg_result
-                    configurations["nvg_time"] = nvg_time
-                    configurations["nvg_cost"] = nvg_cost
-                    configurations["run_nvg_result"] = run_nvg_result
-                    configurations["run_nvg_force"] = run_nvg_force
-                    configurations["run_nvg_time"] = run_nvg_time
-
-                    if rospy.is_shutdown():
-                        break
-
-                    rospy.loginfo(f'Running SVG global planner on environment.')
-                    svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
-
-                    rospy.loginfo(f'Executing SVG path in environment.')
-                    run_svg_result, run_svg_time, run_svg_force = self.run_trajectory(svg_result, additions)
-
-                    configurations["svg_result"] = svg_result
-                    configurations["svg_time"] = svg_time
-                    configurations["svg_cost"] = svg_cost
-                    configurations["run_svg_result"] = run_svg_result
-                    configurations["run_svg_force"] = run_svg_force
-                    configurations["run_svg_time"] = run_svg_time
-
-                    if rospy.is_shutdown():
-                        break
-
-                    rospy.loginfo(f'Running PRM global planner on environment.')
-                    prm_result, prm_graph, prm_time, prm_path, prm_cost = self.run_path_planner(actors, 'prm')
-
-                    rospy.loginfo(f'Executing PRM path in environment.')
-                    run_prm_result, run_prm_time, run_prm_force = self.run_trajectory(prm_result, additions)
-
-                    configurations["prm_result"] = prm_result
-                    configurations["prm_time"] = prm_time
-                    configurations["prm_cost"] = prm_cost
-                    configurations["run_prm_result"] = run_prm_result
-                    configurations["run_prm_force"] = run_prm_force
-                    configurations["run_prm_time"] = run_prm_time
-
-                    if rospy.is_shutdown():
-                        break
-
-                    rospy.loginfo(f'Running RRT global planner on environment.')
-                    rrt_result, rrt_graph, rrt_time, rrt_path, rrt_cost = self.run_path_planner(actors, 'rrt')
-
-                    rospy.loginfo(f'Executing RRT path in environment.')
-                    run_rrt_result, run_rrt_time, run_rrt_force = self.run_trajectory(rrt_result, additions)
-
-                    configurations["rrt_result"] = rrt_result
-                    configurations["rrt_time"] = rrt_time
-                    configurations["rrt_cost"] = rrt_cost
-                    configurations["run_rrt_result"] = run_rrt_result
-                    configurations["run_rrt_force"] = run_rrt_force
-                    configurations["run_rrt_time"] = run_rrt_time
-
-                    if rospy.is_shutdown():
-                        break
-
-                    self.save_snapshot_paths(name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
-                    self.save_snapshot_graph(name, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
-                    rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
-
-                    self.save_result(self.file_path, configurations)
-                    rospy.loginfo(f'Saved information to: {self.file_path}')
+        for dimension in self.DIMENSION_ROOM:
+            for _ in range(self.ROOM_ITERATION):
+                self.apply_sequence(dimension, dimension)
 
                 if rospy.is_shutdown():
                     break
@@ -160,7 +79,111 @@ class BenchmarkGlobalPlanner:
             if rospy.is_shutdown():
                 break
 
-    def initiate_random_world(self, x, y):
+    def apply_sequence(self, x, y, mode='grid', stationary_percentage=0, adjustable_percentage=0.):
+        self.gym_world.params['stationary_percentage'] = stationary_percentage
+        self.gym_world.params['adjustable_percentage'] = adjustable_percentage
+
+        rospy.loginfo(f'Creating environment (x:{x} y:{y}) with mode:{mode}')
+        additions, actors, configurations = self.initiate_world(x, y, mode=mode)
+        self.reset_robot()
+
+        robot_dof = self.gym_world.get_robot_dofs()
+        q_init = (robot_dof[0], robot_dof[2])
+        q_goal = self.scheduler.robot_goal_pos
+
+        name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
+        configurations["ID"] = name
+
+        if rospy.is_shutdown():
+            return 
+
+        nvg_graph, nvg_path = None, None
+        if self.USE_NVG:
+            rospy.loginfo(f'Running NVG global planner on environment.')
+            nvg_result, nvg_graph, nvg_time, nvg_path, nvg_cost = self.run_path_planner(actors, 'nvg')
+
+            configurations["nvg_result"] = nvg_result
+            configurations["nvg_time"] = nvg_time
+            configurations["nvg_cost"] = nvg_cost
+
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing NVG path in environment.')
+                run_nvg_result, run_nvg_time, run_nvg_force = self.run_trajectory(nvg_result, additions)
+
+                configurations["run_nvg_result"] = run_nvg_result
+                configurations["run_nvg_force"] = run_nvg_force
+                configurations["run_nvg_time"] = run_nvg_time
+
+        if rospy.is_shutdown():
+            return
+
+        svg_graph, svg_path = None, None
+        if self.USE_SVG:
+            rospy.loginfo(f'Running SVG global planner on environment.')
+            svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+         
+            configurations["svg_result"] = svg_result
+            configurations["svg_time"] = svg_time
+            configurations["svg_cost"] = svg_cost
+
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing SVG path in environment.')
+                run_svg_result, run_svg_time, run_svg_force = self.run_trajectory(svg_result, additions)
+
+                configurations["run_svg_result"] = run_svg_result
+                configurations["run_svg_force"] = run_svg_force
+                configurations["run_svg_time"] = run_svg_time
+
+        if rospy.is_shutdown():
+            return
+
+        prm_graph, prm_path = None, None
+        if self.USE_PRM:
+            rospy.loginfo(f'Running PRM global planner on environment.')
+            prm_result, prm_graph, prm_time, prm_path, prm_cost = self.run_path_planner(actors, 'prm')
+
+            configurations["prm_result"] = prm_result
+            configurations["prm_time"] = prm_time
+            configurations["prm_cost"] = prm_cost
+
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing PRM path in environment.')
+                run_prm_result, run_prm_time, run_prm_force = self.run_trajectory(prm_result, additions)
+
+                configurations["run_prm_result"] = run_prm_result
+                configurations["run_prm_force"] = run_prm_force
+                configurations["run_prm_time"] = run_prm_time
+
+        if rospy.is_shutdown():
+            return 
+
+        rrt_graph, rrt_path = None, None
+        if self.USE_RRT:
+            rospy.loginfo(f'Running RRT global planner on environment.')
+            rrt_result, rrt_graph, rrt_time, rrt_path, rrt_cost = self.run_path_planner(actors, 'rrt')
+            configurations["rrt_result"] = rrt_result
+            configurations["rrt_time"] = rrt_time
+            configurations["rrt_cost"] = rrt_cost
+
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing RRT path in environment.')
+                run_rrt_result, run_rrt_time, run_rrt_force = self.run_trajectory(rrt_result, additions)
+
+                configurations["run_rrt_result"] = run_rrt_result
+                configurations["run_rrt_force"] = run_rrt_force
+                configurations["run_rrt_time"] = run_rrt_time
+
+        if rospy.is_shutdown():
+            return
+
+        self.save_snapshot_paths(name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
+        self.save_snapshot_graph(name, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
+        rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
+
+        self.save_result(self.file_path, configurations)
+        rospy.loginfo(f'Saved information to: {self.file_path}')
+
+    def initiate_world(self, x, y, mode='random'):
         self.gym_world.params['range_x'] = [-x, x]
         self.gym_world.params['range_y'] = [-y, y]
 
@@ -187,30 +210,54 @@ class BenchmarkGlobalPlanner:
         self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
 
-        additions = self.gym_world.random_additions()
-        actors = [ActorWrapper(**addition) for addition in additions]
+        if mode == 'random':
+            additions = self.gym_world.random_additions()
+            actors = [ActorWrapper(**addition) for addition in additions]
 
-        room_area = (2 * x) * (2 * y)
-        stationary_area = 0
-        adjustable_area = 0
+            room_area = (2 * x) * (2 * y)
+            stationary_area = 0
+            adjustable_area = 0
 
-        state_ten = torch.zeros(len(actors), 13)
+            state_ten = torch.zeros(len(actors), 13)
 
-        for i, actor in enumerate(actors):
-            state_ten[i, :3] = torch.tensor(actor.init_pos)
-            state_ten[i, 3:7] = torch.tensor(actor.init_ori)
+            for i, actor in enumerate(actors):
+                state_ten[i, :3] = torch.tensor(actor.init_pos)
+                state_ten[i, 3:7] = torch.tensor(actor.init_ori)
 
-            actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
-            actor.mass = actor.mass + actor_mass_noise
+                actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+                actor.mass = actor.mass + actor_mass_noise
 
-            if actor.mass >= self.scheduler.prm_planner.mass_threshold:
-                stationary_area += (actor.size[0] * actor.size[1])
-            else:
-                adjustable_area += (actor.size[0] * actor.size[1])
+                if actor.mass >= self.scheduler.prm_planner.mass_threshold:
+                    stationary_area += (actor.size[0] * actor.size[1])
+                else:
+                    adjustable_area += (actor.size[0] * actor.size[1])
 
-            print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
+                print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
 
-        configurations = {"room_area": room_area, "stationary_area": stationary_area, "adjustable_area": adjustable_area}
+            configurations = {"room_area": room_area, "stationary_area": stationary_area, "adjustable_area": adjustable_area}
+
+        elif mode == 'grid':
+            additions = self.gym_world.grid_additions()
+            actors = [ActorWrapper(**addition) for addition in additions]
+
+            room_area = (2 * x) * (2 * y)
+
+            state_ten = torch.zeros(len(actors), 13)
+
+            for i, actor in enumerate(actors):
+                state_ten[i, :3] = torch.tensor(actor.init_pos)
+                state_ten[i, 3:7] = torch.tensor(actor.init_ori)
+
+                actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+                actor.mass = actor.mass + actor_mass_noise
+
+                print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
+
+            amount_of_walls = len(self.gym_world.create_walls())
+            obstacle_amount = len(additions) - amount_of_walls
+
+            configurations = {"room_area": room_area, 'obstacle_amount': obstacle_amount}
+
         return additions, (actors, state_ten), configurations
 
     def run_path_planner(self, actors, planner_mode):
@@ -248,8 +295,6 @@ class BenchmarkGlobalPlanner:
             if time.time() - exec_start_time > self.MAX_EXEC_DURATION:
                 rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
                 break
-
-        self.gym_world.configure(additions)
 
         exec_time =  time.time() - exec_start_time
         return exec_run_result, exec_time, exec_net_forces

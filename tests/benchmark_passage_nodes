@@ -17,7 +17,7 @@ from tf.transformations import quaternion_from_euler
 from matplotlib.patches import Polygon
 from matplotlib import colors
 
-from scheduler import svg
+from scheduler import SVG
 
 
 class Plotter:
@@ -25,7 +25,7 @@ class Plotter:
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_polygon_plotter/'
 
     def __init__(self):
-        self.svg = svg(range_x=(-10, 10), range_y=(-10, 10),mass_threshold=10, path_inflation=0.5)
+        self.svg = SVG(range_x=(-10, 10), range_y=(-10, 10),mass_threshold=10, path_inflation=0.5)
 
         self.data_folder = os.path.join(
             os.path.expanduser('~'), self.DATA_FOLDER)
@@ -325,9 +325,7 @@ if __name__ == "__main__":
 
     plotter = Plotter()
 
-    # plotter.plot_obstacle_nodes()
-    # plotter.plot_intersection_nodes()
-    # plotter.plot_passage_nodes()
-    # plotter.plot_all_nodes()
-
-    plotter.generate_scenarios()
+    plotter.plot_inflation_nodes()
+    plotter.plot_intersection_nodes()
+    plotter.plot_passage_nodes()
+    plotter.plot_all_nodes()

@@ -4,13 +4,22 @@
     <arg name="config" default="config_dingo_push" />
     <arg name="layout" default="random" />
 
-    <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
-        <param name="config" value="$(arg config)" />
-        <param name="layout" value="$(arg layout)" />
-    </node>
+    <arg name="use_benchmark_passage" default="false" />
+    <arg name="use_benchmark_planner" default="false" />
 
-    <node name="benchmark_global_planner" pkg="semantic_namo" type="benchmark_global_planner" output="screen" required="true" launch-prefix="$(arg venv)">
-        <param name="config" value="$(arg config)" />
-        <param name="layout" value="$(arg layout)" />
-    </node>
+    <group if="$(eval use_benchmark_planner)">
+        <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
+            <param name="config" value="$(arg config)" />
+            <param name="layout" value="$(arg layout)" />
+        </node>
+
+        <node name="benchmark_global_planner" pkg="semantic_namo" type="benchmark_global_planner" output="screen" required="true" launch-prefix="$(arg venv)">
+            <param name="config" value="$(arg config)" />
+            <param name="layout" value="$(arg layout)" />
+        </node>
+    </group>
+
+    <group if="$(eval use_benchmark_passage)">
+        <node name="benchmark_passage_nodes" pkg="semantic_namo" type="benchmark_passage_nodes" output="screen" required="true" launch-prefix="$(arg venv)" />
+    </group>
 </launch>
