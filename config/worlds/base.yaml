@@ -6,7 +6,7 @@ camera:
     tar: [0., 0., 0.]
 
 scheduler:
-    mass_threshold: 15.
+    mass_threshold: 20.
     path_inflation: 0.3
 
 controller:
@@ -88,6 +88,6 @@ objects:
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
         noise_percentage_friction: 0.3
-        noise_percentage_mass: 0.8
+        noise_percentage_mass: 1.5
         fixed: False
         collision: True

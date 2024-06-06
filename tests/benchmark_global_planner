@@ -29,7 +29,7 @@ class BenchmarkGlobalPlanner:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
 
-    DIMENSION_ROOM = [2, 5, 10]
+    DIMENSION_ROOM = [2.1, 4.1, 8.1]
     ROOM_ITERATION = 100
 
     MAX_EXEC_DURATION = 600

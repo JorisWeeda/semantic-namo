@@ -7,12 +7,12 @@
     <arg name="use_benchmark_passage" default="false" />
     <arg name="use_benchmark_planner" default="false" />
 
-    <group if="$(eval use_benchmark_planner)">
-        <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
-            <param name="config" value="$(arg config)" />
-            <param name="layout" value="$(arg layout)" />
-        </node>
+    <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
+        <param name="config" value="$(arg config)" />
+        <param name="layout" value="$(arg layout)" />
+    </node>
 
+    <group if="$(eval use_benchmark_planner)">
         <node name="benchmark_global_planner" pkg="semantic_namo" type="benchmark_global_planner" output="screen" required="true" launch-prefix="$(arg venv)">
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
@@ -20,6 +20,9 @@
     </group>
 
     <group if="$(eval use_benchmark_passage)">
-        <node name="benchmark_passage_nodes" pkg="semantic_namo" type="benchmark_passage_nodes" output="screen" required="true" launch-prefix="$(arg venv)" />
+        <node name="benchmark_passage_nodes" pkg="semantic_namo" type="benchmark_passage_nodes" output="screen" required="true" launch-prefix="$(arg venv)">
+            <param name="config" value="$(arg config)" />
+            <param name="layout" value="$(arg layout)" />
+        </node>
     </group>
 </launch>
