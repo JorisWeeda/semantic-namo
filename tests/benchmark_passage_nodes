@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper # type: ignore
+from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw   # type: ignore
 
 import os
 import copy
 import rospy
+import hydra
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
 import shapely
 from shapely import buffer
+from shapely.affinity import rotate
 from shapely.ops import nearest_points
 
 from datetime import datetime
@@ -17,6 +20,8 @@ from tf.transformations import quaternion_from_euler
 from matplotlib.patches import Polygon
 from matplotlib import colors
 
+from environment import SimulateWorld
+from scheduler import Scheduler
 from scheduler import SVG
 
 
@@ -24,12 +29,32 @@ class Plotter:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_polygon_plotter/'
 
-    def __init__(self):
-        self.svg = SVG(range_x=(-10, 10), range_y=(-10, 10),mass_threshold=10, path_inflation=0.5)
+    DIMENSION_ROOM = [2.1]
 
-        self.data_folder = os.path.join(
-            os.path.expanduser('~'), self.DATA_FOLDER)
+    def __init__(self,gym_world, scheduler, layout, config):
+        self.gym_world = gym_world
+        self.scheduler = scheduler
+
+        self.config = config
+        self.layout = layout
+
+        self.svg = SVG(range_x=(-10, 10), range_y=(-10, 10),mass_threshold=10, path_inflation=0.3)
+
+        self.data_folder = os.path.join(os.path.expanduser('~'), self.DATA_FOLDER)
         os.makedirs(self.data_folder, exist_ok=True)
+
+    @classmethod
+    def create_plotter(cls):
+        rospy.init_node('test_plotter_node')
+        hydra.initialize(config_path="../config", version_base=None)
+    
+        config = rospy.get_param('~config')
+        layout = rospy.get_param('~layout')
+
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
+        scheduler = Scheduler.create_scheduler(layout)
+
+        return cls(gym_world, scheduler, layout, config)
 
     def _create_file_path(self, name):
         file_name = f"{name}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
@@ -319,13 +344,162 @@ class Plotter:
 
         self._plot_passage_scenarios(scenarios)
 
+    def plot_experiment_1(self):
+        _, axs = plt.subplots(1, len(self.DIMENSION_ROOM))
+
+        for i, dimension in enumerate(self.DIMENSION_ROOM):
+            x = y = dimension
+
+            self.gym_world.params['range_x'] = [-x, x]
+            self.gym_world.params['range_y'] = [-y, y]
+    
+            mass_threshold = self.gym_world.params['scheduler']['mass_threshold']
+
+            self.scheduler.robot_goal_pos[0] = x - 0.5
+            self.scheduler.robot_goal_pos[1] = y - 0.5
+ 
+            robot_dof = self.gym_world.get_robot_dofs()
+            robot_dof[0] = -x + 0.5
+            robot_dof[2] = -y + 0.5
+            robot_dof[4] = torch.pi / 2
+
+            self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
+            self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
+
+            q_init = [robot_dof[0], robot_dof[2], 0]
+            q_goal = self.scheduler.robot_goal_pos
+
+            additions = self.gym_world.grid_additions()
+            actors = [ActorWrapper(**addition) for addition in additions]
+
+            for actor in actors:
+                actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+                actor.mass = actor.mass + actor_mass_noise
+                
+                print(actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
+
+                if actor.fixed:
+                    continue
+
+                mass = actor.mass
+                size = [dim - 1e-1 for dim in actor.size]
+
+                obs_pos = torch.tensor(actor.init_pos)
+                obs_rot = quaternion_to_yaw(torch.tensor(actor.init_ori))
+
+                corners = [
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+                ]
+
+                polygon = shapely.Polygon(corners)
+                polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+    
+                patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / mass_threshold))
+                axs.add_patch(patch_polygon)
+
+            axs.plot(q_init[0], q_init[1], color='green', marker='o', markersize=10, label='Start Node')
+            axs.plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=10, label='Goal Node')
+
+            axs.set_xlim(-x, x)
+            axs.set_ylim(-y, y)
+
+            axs.set_title(f'Room {i + 1}')
+            axs.set_xlabel('x-axis')
+            axs.set_ylabel('y axis')
+            axs.set_aspect('equal')
+
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=mass_threshold))
+        cbar = plt.colorbar(sm, ax=axs)
+        cbar.set_label('Mass')
+        plt.show()
+
+    def plot_experiment_2(self):
+        _, axs = plt.subplots(1, len(self.DIMENSION_ROOM))
+
+        for i, dimension in enumerate(self.DIMENSION_ROOM):
+            x = y = dimension
+
+            self.gym_world.params['range_x'] = [-x, x]
+            self.gym_world.params['range_y'] = [-y, y]
+    
+            self.gym_world.params['stationary_percentage'] = 0.01
+            self.gym_world.params['adjustable_percentage'] = 0.40
+
+            self.gym_world.params['stationary_size_noise'] = 0.5
+            self.gym_world.params['adjustable_size_noise'] = 0.5
+ 
+            mass_threshold = self.gym_world.params['scheduler']['mass_threshold']
+
+            self.scheduler.robot_goal_pos[0] = x - 0.5
+            self.scheduler.robot_goal_pos[1] = y - 0.5
+ 
+            robot_dof = self.gym_world.get_robot_dofs()
+            robot_dof[0] = -x + 0.5
+            robot_dof[2] = -y + 0.5
+            robot_dof[4] = torch.pi / 2
+
+            self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
+            self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
+
+            q_init = [robot_dof[0], robot_dof[2], 0]
+            q_goal = self.scheduler.robot_goal_pos
+
+            additions = self.gym_world.random_additions()
+            actors = [ActorWrapper(**addition) for addition in additions]
+
+            for actor in actors:
+                actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+                actor.mass = actor.mass + actor_mass_noise
+
+                print(actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
+
+                if actor.fixed:
+                    continue
+
+                mass = actor.mass
+                size = [dim - 1e-1 for dim in actor.size]
+
+                obs_pos = torch.tensor(actor.init_pos)
+                obs_rot = quaternion_to_yaw(torch.tensor(actor.init_ori))
+
+                corners = [
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+                ]
+
+                polygon = shapely.Polygon(corners)
+                polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+    
+                patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / mass_threshold))
+                axs.add_patch(patch_polygon)
+
+            axs.plot(q_init[0], q_init[1], color='green', marker='o', markersize=10, label='Start Node')
+            axs.plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=10, label='Goal Node')
+
+            axs.set_xlim(-x, x)
+            axs.set_ylim(-y, y)
+
+            axs.set_title(f'Room {i + 1}')
+            axs.set_xlabel('x-axis')
+            axs.set_ylabel('y axis')
+            axs.set_aspect('equal')
+
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=mass_threshold))
+        cbar = plt.colorbar(sm, ax=axs)
+        cbar.set_label('Mass')
+        plt.show()
+
+
 
 if __name__ == "__main__":
-    rospy.init_node('polygon_plotter_node')
 
-    plotter = Plotter()
+    plotter = Plotter.create_plotter()
+    plotter.plot_experiment_1()
+    plotter.plot_experiment_2()
 
-    plotter.plot_inflation_nodes()
-    plotter.plot_intersection_nodes()
-    plotter.plot_passage_nodes()
-    plotter.plot_all_nodes()
+    rospy.signal_shutdown("Benchmark tasks completed. Shutting down ROS.")
