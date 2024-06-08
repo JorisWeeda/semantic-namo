@@ -29,17 +29,17 @@ class BenchmarkGlobalPlanner:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
 
-    DIMENSION_ROOM = [2.1, 4.1, 8.1]
+    DIMENSION_ROOM = [2.1]
     ROOM_ITERATION = 100
 
-    MAX_EXEC_DURATION = 600
+    MAX_EXEC_DURATION = 300
 
     USE_NVG = True
     USE_SVG = True
     USE_PRM = False
     USE_RRT = True
 
-    RUN_SIM = False
+    RUN_SIM = True
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world
@@ -57,7 +57,7 @@ class BenchmarkGlobalPlanner:
         config = rospy.get_param('~config')
         layout = rospy.get_param('~layout')
 
-        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False   )
         scheduler = Scheduler.create_scheduler(layout)
 
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)

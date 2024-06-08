@@ -17,23 +17,23 @@ class Objective:
         self.u_max = torch.Tensor(u_max)
 
         self.w_con = np.diag([1.0, 1.0, 1.0])
+        self.w_for = 30.0
         self.w_dis = 20.0
-        self.w_for = 20.0
-        self.w_rot = 5.00
+        self.w_rot = 15.0
 
     def reset(self):
         pass
 
     def compute_cost(self, sim, u):
-        cost_distance_to_goal = self._distance_to_goal(sim)
         cost_rotation_to_goal = self._rotation_to_goal(sim)
-        cost_contact_forces_to_goal = self._contact_forces_to_goal(sim)
+        cost_distance_to_goal = self._distance_to_goal(sim)
+        cost_of_contact_force = self._contact_forces_to_goal(sim)
 
         cost_high_control_vec = self._cost_control_vec(u)
 
-        total_cost = self.w_dis * cost_distance_to_goal + \
-                     self.w_rot * cost_rotation_to_goal + \
-                     self.w_for * cost_contact_forces_to_goal + \
+        total_cost = self.w_rot * cost_rotation_to_goal + \
+                     self.w_dis * cost_distance_to_goal + \
+                     self.w_for * cost_of_contact_force + \
                      cost_high_control_vec
 
         return total_cost

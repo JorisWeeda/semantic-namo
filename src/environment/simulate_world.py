@@ -193,7 +193,7 @@ class SimulateWorld:
             obstacle["size"][1] = size_y + np.random.uniform(-adjustable_size_noise * size_y, adjustable_size_noise * size_y)
             obstacle["size"][2] = size_z + np.random.uniform(-adjustable_size_noise * size_z, adjustable_size_noise * size_z)
 
-            if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori, additions, excluded_poses):
+            if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori, additions, excluded_poses, margin=1e-3):
                 current_adjustable_area += (obstacle["size"][0] * obstacle["size"][1])
                 additions.append(obstacle)
 
@@ -217,7 +217,7 @@ class SimulateWorld:
         start_x, end_x = range_x[0] + obstacle_size[0], range_x[1]
         start_y, end_y = range_y[0] + obstacle_size[1], range_y[1]
 
-        for x in np.arange(start_x, end_x, inflation + obstacle_size[0]):
+        for x in np.arange(start_x, end_x, (1.5 * inflation) + obstacle_size[0]):
             for y in np.arange(start_y, end_y, inflation + obstacle_size[1]):
                 obstacle = copy.deepcopy(self.params["objects"]["adjustable"])
                 obstacle["name"] = f"Obstacle {len(additions)}"
