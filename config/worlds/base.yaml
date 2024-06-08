@@ -1,10 +1,10 @@
 
 random: False
 
-stationary_percentage: 0.1
+stationary_percentage: 0.01
 stationary_size_noise: 0.5
 
-adjustable_percentage: 0.1
+adjustable_percentage: 0.10
 adjustable_size_noise: 0.5
 
 camera:
@@ -16,7 +16,7 @@ scheduler:
     path_inflation: 0.3
 
 controller:
-    max_f_contact: 
+    max_f_contact: 1000.
     pos_tolerance: 0.3  # meters
     yaw_tolerance: 0.1  # radian
     vel_tolerance: 0.1
@@ -81,7 +81,7 @@ objects:
         mass: 30.00
         color: [0.2, 0.2, 0.2]
         noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
+        noise_percentage_friction: 0.
         noise_percentage_mass: 0.1
         fixed: False
         collision: True
@@ -93,7 +93,7 @@ objects:
         mass: 10.00
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
-        noise_percentage_friction: 0.3
+        noise_percentage_friction: 0.
         noise_percentage_mass: 0.9
         fixed: False
         collision: True

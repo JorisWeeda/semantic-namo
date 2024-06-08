@@ -17,11 +17,12 @@ from scheduler import Objective
 def controller(config: ExampleConfig):
     config = OmegaConf.to_object(config)
 
-    rospy.loginfo(f'Creating controller on server tcp://0.0.0.0:4242')
+    rospy.loginfo('Creating controller on server tcp://0.0.0.0:4242')
 
-    objective = Objective(config["mppi"].u_min, config["mppi"].u_max)
+    objective = Objective(config["mppi"].u_min, config["mppi"].u_max, config["mppi"].device)
 
-    mppi_controller = zerorpc.Server(MPPIisaacPlanner(config, objective, None), heartbeat=None)
+    mppi_controller = zerorpc.Server(MPPIisaacPlanner(
+        config, objective, None), heartbeat=None)
     mppi_controller.bind("tcp://0.0.0.0:4242")
 
     def signal_handler(*args):
@@ -36,6 +37,7 @@ def controller(config: ExampleConfig):
     except zerorpc.exceptions.LostRemote:
         print("Server disconnected. Exiting client.")
 
+
 if __name__ == "__main__":
     rospy.init_node('controller', anonymous=True)
 
@@ -43,5 +45,5 @@ if __name__ == "__main__":
 
     hydra.initialize(config_path="../config", version_base=None)
     hydra_config = hydra.compose(config)
-    
+
     controller(hydra_config)

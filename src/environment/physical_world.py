@@ -69,7 +69,7 @@ class PhysicalWorld:
 
         params = {**base_config, **world_config}
         
-        objective = Objective(config["mppi"].u_min, config["mppi"].u_max)
+        objective = Objective(config["mppi"].u_min, config["mppi"].u_max, config["mppi"].device)
 
         controller = MPPIisaacPlanner(config, objective)
         return cls(params, config, controller)

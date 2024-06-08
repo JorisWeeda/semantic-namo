@@ -6,9 +6,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from matplotlib.patches import Polygon
+from tf.transformations import euler_from_quaternion
 from shapely.affinity import rotate
 
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
 class Dashboard:
 
@@ -27,11 +27,11 @@ class Dashboard:
     def create_dashboard(cls, layout):
         base_config_file_path = f'{cls.PKG_PATH}/config/worlds/base.yaml'
         with open(base_config_file_path, 'r') as stream:
-            base_config =  yaml.safe_load(stream)
+            base_config = yaml.safe_load(stream)
 
         world_config_file_path = f'{cls.PKG_PATH}/config/worlds/{layout}.yaml'
         with open(world_config_file_path, 'r') as stream:
-            world_config =  yaml.safe_load(stream)
+            world_config = yaml.safe_load(stream)
 
         params = {**base_config, **world_config}
 
@@ -52,7 +52,7 @@ class Dashboard:
         for actor, state in zip(actors, states):
             position, orientation = state[:3], state[3:7]
 
-            size_x, size_y, _= actor.size
+            size_x, size_y, _ = actor.size
             obs_pos = position[:2]
 
             corners = np.array([[-size_x / 2, -size_y / 2],
@@ -61,14 +61,15 @@ class Dashboard:
                                 [-size_x / 2, size_y / 2],
                                 [-size_x / 2, -size_y / 2]])
 
-            obs_rot = quaternion_to_yaw(orientation)
+            obs_rot = self.quaternion_to_yaw(orientation)
             rotation_matrix = np.array([[np.cos(obs_rot), -np.sin(obs_rot)],
                                         [np.sin(obs_rot), np.cos(obs_rot)]])
 
             rotate_corners = np.dot(corners, rotation_matrix)
             translate_corners = np.add(rotate_corners, obs_pos)
 
-            polygon = Polygon(translate_corners, closed=True, color=actor.color)
+            polygon = Polygon(translate_corners,
+                              closed=True, color=actor.color)
             self.ax_1.add_patch(polygon)
 
         self.ax_1.set_xlim(*self.range_x)
@@ -94,7 +95,7 @@ class Dashboard:
 
             size = actor.size
             obs_pos = state[:2]
-            obs_rot = quaternion_to_yaw(state[3:7])
+            obs_rot = self.quaternion_to_yaw(state[3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -104,15 +105,19 @@ class Dashboard:
             ]
 
             polygon = shapely.Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = rotate(polygon, obs_rot, use_radians=True)
 
-            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=actor.color)
+            patch_polygon = Polygon(
+                polygon.exterior.coords, closed=True, color=actor.color)
             self.ax_2.add_patch(patch_polygon)
 
-        nodes = np.array([(*data['pos'], data['cost']) for _, data in graph.nodes(data=True)])
-        edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v, _ in graph.edges(data=True)])
+        nodes = np.array([(*data['pos'], data['cost'])
+                         for _, data in graph.nodes(data=True)])
+        edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos'])
+                         for u, v, _ in graph.edges(data=True)])
 
-        node_scatter = self.ax_2.scatter(nodes[:, 0], nodes[:, 1], c=nodes[:, 2], cmap=plt.cm.viridis)
+        node_scatter = self.ax_2.scatter(
+            nodes[:, 0], nodes[:, 1], c=nodes[:, 2], cmap=plt.cm.viridis)
         cbar = plt.colorbar(node_scatter, ax=self.ax_2)
         cbar.set_label('Cost')
 
@@ -120,7 +125,8 @@ class Dashboard:
             self.ax_2.plot(edge[:, 0], edge[:, 1], color='blue', linewidth=0.1)
 
         if shortest_path is not None:
-            self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], color='green', linewidth=3)
+            self.ax_2.plot(
+                shortest_path[:, 0], shortest_path[:, 1], color='green', linewidth=3)
 
         self.ax_2.set_title('Global path planning')
         self.ax_2.autoscale(enable=True)
@@ -143,11 +149,14 @@ class Dashboard:
             colors = plt.cm.viridis(np.linspace(0, 1, rollout_states.shape[0]))
 
             for i in range(rollout_states.shape[0]):
-                x_values, y_values = rollout_states[i, :, 0], rollout_states[i, :, 2]
+                x_values, y_values = rollout_states[i,
+                                                    :, 0], rollout_states[i, :, 2]
                 self.ax_3.plot(y_values, x_values, color=colors[i], alpha=0.4)
 
-            x_values_best, y_values_best = best_states[0, :, 0], best_states[0, :, 2]
-            self.ax_3.plot(y_values_best, x_values_best, color='red', alpha=1.0)
+            x_values_best, y_values_best = best_states[0,
+                                                       :, 0], best_states[0, :, 2]
+            self.ax_3.plot(y_values_best, x_values_best,
+                           color='red', alpha=1.0)
 
         self.ax_3.set_title('Robot DOF rollouts')
         self.ax_3.autoscale(enable=True)
@@ -183,9 +192,13 @@ class Dashboard:
 
         if self.fig_planning:
             plt.close(self.fig_planning)
-        
+
         if self.fig_rollouts:
             plt.close(self.fig_rollouts)
 
         if self.fig_progress:
             plt.close(self.fig_progress)
+
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]

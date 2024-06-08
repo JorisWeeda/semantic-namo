@@ -32,7 +32,7 @@ environment:
     obstacles:
         - chair:
             name: "Chair 1"
-            init_pos: [-0.4, -2.0, 0.1]
+            init_pos: [-0.5, -2.0, 0.1]
             init_ori: [0.0, 0.0, 40.0]
         - chaise:
             name: "Chaise 1"

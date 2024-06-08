@@ -83,7 +83,7 @@ class NVG:
             ]
 
             polygon = Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = rotate(polygon, obs_rot, use_radians=True)
             polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
 
             shapes[name] = polygon

@@ -97,7 +97,7 @@ class Viewer:
 
     def run(self):
         for idx, obstacle_state in enumerate(self.obstacle_states):
-            obs_state = torch.Tensor([*obstacle_state, 0., 0., 0., 0., 0., 0.])
+            obs_state = torch.Tensor([*obstacle_state, 0., 0., 0., 0., 0., 0.], device=self.config["mppi"]["device"])
             self.simulation.set_root_state_tensor_by_actor_idx(obs_state, idx + 1)
 
         self.simulation.reset_robot_state(self.robot_q, self.robot_q_dot)
@@ -107,15 +107,15 @@ class Viewer:
         self.simulation.stop_sim()
 
     def _cb_robot_state(self, msg):
-        curr_pos = torch.tensor([msg.pose.pose.position.x, msg.pose.pose.position.y])
+        curr_pos = torch.Tensor([msg.pose.pose.position.x, msg.pose.pose.position.y], device=self.config["mppi"]["device"])
         curr_ori = msg.pose.pose.orientation
 
         _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
-        self.robot_q = torch.tensor([curr_pos[0], curr_pos[1], curr_yaw])
+        self.robot_q = torch.Tensor([curr_pos[0], curr_pos[1], curr_yaw], device=self.config["mppi"]["device"])
 
         if self.robot_prev_msg is not None:
-            prev_pos = torch.tensor([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y])
+            prev_pos = torch.Tensor([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y], device=self.config["mppi"]["device"])
             prev_ori = self.robot_prev_msg.pose.pose.orientation
 
             _, _, prev_yaw = euler_from_quaternion([prev_ori.x, prev_ori.y, prev_ori.z, prev_ori.w])
@@ -125,14 +125,14 @@ class Viewer:
             linear_velocity = (curr_pos - prev_pos) / delta_t
             angular_velocity = (curr_yaw - prev_yaw) / delta_t
 
-            cos_yaw = torch.cos(torch.tensor([curr_yaw]))
-            sin_yaw = torch.sin(torch.tensor([curr_yaw]))
-            self.robot_R = torch.tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]])
+            cos_yaw = torch.cos(torch.Tensor([curr_yaw]), device=self.config["mppi"]["device"])
+            sin_yaw = torch.sin(torch.Tensor([curr_yaw]), device=self.config["mppi"]["device"])
+            self.robot_R = torch.Tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]], device=self.config["mppi"]["device"])
 
-            robot_xy_dot = torch.tensor([[linear_velocity[0]], [linear_velocity[1]]])
+            robot_xy_dot = torch.Tensor([[linear_velocity[0]], [linear_velocity[1]]], device=self.config["mppi"]["device"])
             robot_xy_dot = torch.matmul(torch.transpose(self.robot_R, 0, 1), robot_xy_dot)
             
-            self.robot_q_dot = torch.tensor([*robot_xy_dot, angular_velocity])
+            self.robot_q_dot = torch.Tensor([*robot_xy_dot, angular_velocity], device=self.config["mppi"]["device"])
             
         self.robot_prev_msg = msg
 

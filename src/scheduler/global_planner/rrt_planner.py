@@ -1,10 +1,9 @@
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
-
 import time
 
 import numpy as np
 import networkx as nx
 
+from tf.transformations import euler_from_quaternion
 from shapely.geometry import Point, LineString, Polygon
 from shapely.affinity import rotate
 from shapely import buffer
@@ -25,12 +24,11 @@ class RRT:
     MAX_ITERATION_TIME = 300
     OBS_SAFETY_MARGINS = 1e-2
 
-
     def __init__(self, range_x, range_y, mass_threshold, path_inflation):
         self.range_x = range_x
         self.range_y = range_y
 
-        self.mass_threshold = mass_threshold 
+        self.mass_threshold = mass_threshold
         self.path_inflation = path_inflation
 
     def graph(self, q_init, q_goal, actors, intermediate_goal_check=True, margin=OBS_SAFETY_MARGINS):
@@ -40,10 +38,12 @@ class RRT:
         q_goal = np.array(q_goal)
 
         if self.is_node_in_obstacle_space(q_init, c_space):
-            raise FailedToGeneratePath("Given initial configuration is in obstacle space.")
+            raise FailedToGeneratePath(
+                "Given initial configuration is in obstacle space.")
 
         if self.is_node_in_obstacle_space(q_goal, c_space):
-            raise FailedToGeneratePath("Given goal configuration is in obstacle space.")
+            raise FailedToGeneratePath(
+                "Given goal configuration is in obstacle space.")
 
         nodes = np.array([q_init])
         edges = []
@@ -64,21 +64,24 @@ class RRT:
 
             nodes = np.vstack((nodes, new_node))
 
-            closest_node_idx = np.where((nodes == closest_node).all(axis=1))[0][0]
+            closest_node_idx = np.where(
+                (nodes == closest_node).all(axis=1))[0][0]
             created_node_idx = np.where((nodes == new_node).all(axis=1))[0][0]
 
             edges.append((closest_node_idx, created_node_idx))
 
             if intermediate_goal_check and self.is_goal_reachable(q_goal, nodes, c_space):
                 closest_node = self.closest_node(q_goal, nodes)
-                closest_node_idx = np.where((nodes == closest_node).all(axis=1))[0][0]
+                closest_node_idx = np.where(
+                    (nodes == closest_node).all(axis=1))[0][0]
 
                 nodes = np.vstack((nodes, q_goal))
-                created_node_idx = np.where((nodes == q_goal).all(axis=1))[0][0]
+                created_node_idx = np.where(
+                    (nodes == q_goal).all(axis=1))[0][0]
 
                 edges.append((closest_node_idx, created_node_idx))
                 break
-            
+
         graph = nx.Graph()
 
         for node_idx, node in enumerate(nodes):
@@ -87,7 +90,7 @@ class RRT:
         for _, (start_idx, end_idx) in enumerate(np.array(edges)):
             edge_length = np.linalg.norm(nodes[start_idx] - nodes[end_idx])
             graph.add_edge(start_idx, end_idx, length=edge_length)
-        
+
         return graph
 
     def generate_random_node(self):
@@ -111,7 +114,7 @@ class RRT:
                 inflation = self.path_inflation
 
             obs_pos = actors_state[actor, :2]
-            obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
+            obs_rot = self.quaternion_to_yaw(actors_state[actor, 3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -121,13 +124,13 @@ class RRT:
             ]
 
             polygon = Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
-            polygon = buffer(polygon, inflation, cap_style='flat', join_style='mitre')
+            polygon = rotate(polygon, obs_rot, use_radians=True)
+            polygon = buffer(polygon, inflation,
+                             cap_style='flat', join_style='mitre')
 
-            shapes.append(polygon) 
+            shapes.append(polygon)
 
         return shapes
-
 
     @staticmethod
     def is_goal_reachable(q_goal, nodes, c_space_obstacles):
@@ -151,3 +154,7 @@ class RRT:
     def closest_node(current_node, all_nodes):
         distances = np.linalg.norm(all_nodes - current_node, axis=1)
         return all_nodes[np.argmin(distances)]
+
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]

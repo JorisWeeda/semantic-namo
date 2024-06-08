@@ -1,16 +1,13 @@
-from isaacgym import gymapi
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
-
 import rospy
-import torch
 import numpy as np
 import networkx as nx
 
 from itertools import combinations
 
+from tf.transformations import euler_from_quaternion
 from shapely import buffer, prepare
 from shapely.affinity import rotate
-from shapely.geometry import Point, MultiPoint, LineString, Polygon
+from shapely.geometry import Point, LineString, Polygon
 from shapely.ops import nearest_points
 
 
@@ -22,10 +19,11 @@ class SVG:
 
         self.mass_threshold = mass_threshold
         self.path_inflation = path_inflation
-    
+
     def graph(self, q_init, q_goal, actors):
         actor_polygons, _ = self.generate_polygons(actors)
-        avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - 1e-3)
+        avoid_obstacle, _ = self.generate_polygons(
+            actors, self.path_inflation - 1e-3)
 
         graph = nx.Graph()
         self.add_node_to_graph(graph, (*q_init, 0.), avoid_obstacle.values())
@@ -37,19 +35,23 @@ class SVG:
         self.add_node_to_graph(graph, (*q_goal, 0.), avoid_obstacle.values())
 
         try:
-            nx.shortest_path(graph, source=0, target=len(graph.nodes) -1)
+            nx.shortest_path(graph, source=0, target=len(graph.nodes) - 1)
         except nx.NetworkXNoPath:
             rospy.loginfo("Avoidance is not possible, creating passage nodes.")
             pass
 
         non_inflated_shapes, masses = self.generate_polygons(actors, 0.)
 
-        stationary_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] >= self.mass_threshold}
-        adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] < self.mass_threshold}
+        stationary_polygons = {name: polygon for name, polygon in non_inflated_shapes.items(
+        ) if masses[name] >= self.mass_threshold}
+        adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items(
+        ) if masses[name] < self.mass_threshold}
 
-        passage_nodes = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
+        passage_nodes = self.generate_passages(
+            {**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
-            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values(), knn=4)
+            graph = self.add_node_to_graph(
+                graph, node, non_inflated_shapes.values(), knn=4)
 
         return graph
 
@@ -66,10 +68,12 @@ class SVG:
 
                 if polygons is not None:
                     if not any(edge_line.intersects(polygon) for polygon in polygons):
-                        graph.add_edge(node, new_node_index, length=edge_line.length)
+                        graph.add_edge(node, new_node_index,
+                                       length=edge_line.length)
                         node_connections += 1
                 else:
-                    graph.add_edge(node, new_node_index, length=edge_line.length)
+                    graph.add_edge(node, new_node_index,
+                                   length=edge_line.length)
                     node_connections += 1
 
             if knn and node_connections >= knn:
@@ -79,7 +83,7 @@ class SVG:
 
     def generate_polygons(self, actors, overwrite_inflation=None):
         margin = overwrite_inflation if overwrite_inflation is not None else self.path_inflation
-        
+
         masses, shapes = {}, {}
 
         actor_wrappers, actors_state = actors
@@ -91,7 +95,7 @@ class SVG:
             size = actor_wrapper.size
 
             obs_pos = actors_state[actor, :2]
-            obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
+            obs_rot = self.quaternion_to_yaw(actors_state[actor, 3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -101,7 +105,7 @@ class SVG:
             ]
 
             polygon = Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = rotate(polygon, obs_rot, use_radians=True)
             polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
 
             shapes[name] = polygon
@@ -113,15 +117,19 @@ class SVG:
         nodes = np.empty((0, 3), dtype='float')
 
         if polygons:
-            corner_points = self.get_corner_points(polygons, self.range_x, self.range_y)
+            corner_points = self.get_corner_points(
+                polygons, self.range_x, self.range_y)
             if len(corner_points) != 0:
-                corner_points = np.hstack((corner_points, np.zeros((corner_points.shape[0], 1))))
+                corner_points = np.hstack(
+                    (corner_points, np.zeros((corner_points.shape[0], 1))))
                 nodes = np.vstack((nodes, corner_points))
 
             if use_intersections:
-                intersect_points = self.get_intersection_points(polygons, self.range_x, self.range_y)
+                intersect_points = self.get_intersection_points(
+                    polygons, self.range_x, self.range_y)
                 if len(intersect_points) != 0:
-                    intersect_points = np.hstack((intersect_points, np.zeros((intersect_points.shape[0], 1))))
+                    intersect_points = np.hstack(
+                        (intersect_points, np.zeros((intersect_points.shape[0], 1))))
                     nodes = np.vstack((nodes, intersect_points))
 
             nodes = self.filter_nodes(nodes, polygons)
@@ -135,15 +143,17 @@ class SVG:
         for id_1, id_2 in obstacles_id_pairs:
             if masses[id_1] >= self.mass_threshold and masses[id_2] >= self.mass_threshold:
                 continue
-            
+
             heavy_id, light_id = [id_1, id_2] if masses[id_1] >= masses[id_2] else [id_2, id_1]
             heavy_ob, light_ob = shapes[heavy_id], shapes[light_id]
 
             if heavy_ob.distance(light_ob) > (2 * self.path_inflation):
                 continue
 
-            light_ob = buffer(light_ob, margin, cap_style='flat', join_style='mitre')
-            heavy_ob = buffer(heavy_ob, margin, cap_style='flat', join_style='mitre')
+            light_ob = buffer(light_ob, margin,
+                              cap_style='flat', join_style='mitre')
+            heavy_ob = buffer(heavy_ob, margin,
+                              cap_style='flat', join_style='mitre')
 
             prepare(light_ob)
             prepare(heavy_ob)
@@ -157,7 +167,8 @@ class SVG:
             else:
                 passage_point = light_point
 
-            passage_cost = (2*self.path_inflation - line_segment.length) * masses[light_id]
+            passage_cost = (2 * self.path_inflation - line_segment.length) * masses[light_id]
+            print(heavy_id, masses[heavy_id], '\t', light_id, masses[light_id], '\t', passage_cost)
             passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost)))
         return passages
 
@@ -178,20 +189,24 @@ class SVG:
         for i, polygon_i in enumerate(polygons):
             for j, polygon_j in enumerate(polygons):
                 if i != j:
-                    intersection = polygon_i.boundary.intersection(polygon_j.boundary)
+                    intersection = polygon_i.boundary.intersection(
+                        polygon_j.boundary)
                     if isinstance(intersection, Point):
                         if x_limit[0] <= intersection.x <= x_limit[1] and y_limit[0] <= intersection.y <= y_limit[1]:
-                            intersection_points.append([intersection.x, intersection.y])
+                            intersection_points.append(
+                                [intersection.x, intersection.y])
 
                     elif isinstance(intersection, LineString):
                         for point in intersection.coords:
                             if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append([point[0], point[1]])
+                                intersection_points.append(
+                                    [point[0], point[1]])
 
                     elif isinstance(intersection, Polygon):
                         for point in intersection.exterior.coords:
                             if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append([point[0], point[1]])
+                                intersection_points.append(
+                                    [point[0], point[1]])
                     else:
                         for point in intersection.geoms:
                             if x_limit[0] <= point.x <= x_limit[1] and y_limit[0] <= point.y <= y_limit[1]:
@@ -218,7 +233,8 @@ class SVG:
         for node in nodes:
             point = Point(node)
 
-            is_within_polygon = any(polygon.contains(point) for polygon in polygons)
+            is_within_polygon = any(polygon.contains(point)
+                                    for polygon in polygons)
             if not is_within_polygon:
                 filtered_nodes.append(node)
             else:
@@ -231,8 +247,13 @@ class SVG:
         filtered_nodes = np.array(filtered_nodes)
         return np.unique(filtered_nodes, axis=0)
 
-    @staticmethod    
+    @staticmethod
     def search_distance_radius(polygon):
         vertices = list(polygon.exterior.coords)
-        distance = [LineString([v_1, v_2]).length for v_1, v_2 in combinations(vertices, 2)]
+        distance = [LineString([v_1, v_2]).length for v_1,
+                    v_2 in combinations(vertices, 2)]
         return max(distance)
+
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]

@@ -207,12 +207,12 @@ class Monitor:
 
     @staticmethod
     def get_sim_robot_state(sim):
-        state = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1), sim.dof_state[:, 4].unsqueeze(1)), 1)[0].numpy()
+        state = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1), sim.dof_state[:, 4].unsqueeze(1)), 1)[0].cpu().numpy()
         return state
     
     @staticmethod
     def get_sim_robot_state_d(sim):
-        state_d = torch.cat((sim.dof_state[:, 1].unsqueeze(1), sim.dof_state[:, 3].unsqueeze(1), sim.dof_state[:, 5].unsqueeze(1)), 1)[0].numpy()
+        state_d = torch.cat((sim.dof_state[:, 1].unsqueeze(1), sim.dof_state[:, 3].unsqueeze(1), sim.dof_state[:, 5].unsqueeze(1)), 1)[0].cpu().numpy()
         return state_d
 
     @staticmethod

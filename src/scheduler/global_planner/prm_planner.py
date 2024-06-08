@@ -1,9 +1,8 @@
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
-
 import time
 import numpy as np
 import networkx as nx
 
+from tf.transformations import euler_from_quaternion
 from shapely.geometry import Point, LineString, Polygon
 from shapely.affinity import rotate
 from shapely import buffer
@@ -109,7 +108,7 @@ class PRM:
                 inflation = self.path_inflation
 
             obs_pos = actors_state[actor, :2]
-            obs_rot = quaternion_to_yaw(actors_state[actor, 3:7])
+            obs_rot = self.quaternion_to_yaw(actors_state[actor, 3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -119,7 +118,7 @@ class PRM:
             ]
 
             polygon = Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = rotate(polygon, obs_rot, use_radians=True)
             polygon = buffer(polygon, inflation, cap_style='flat', join_style='mitre')
 
             shapes.append(polygon) 
@@ -199,3 +198,7 @@ class PRM:
                 min_distance = distance
 
         return closest_node
+
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]

@@ -29,9 +29,9 @@ class Plotter:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_polygon_plotter/'
 
-    DIMENSION_ROOM = [2.1]
+    DIMENSION_ROOM = [2.5]
 
-    def __init__(self,gym_world, scheduler, layout, config):
+    def __init__(self, gym_world, scheduler, layout, config):
         self.gym_world = gym_world
         self.scheduler = scheduler
 
@@ -382,7 +382,7 @@ class Plotter:
                     continue
 
                 mass = actor.mass
-                size = [dim - 1e-1 for dim in actor.size]
+                size = [dim - 1e-3 for dim in actor.size]
 
                 obs_pos = torch.tensor(actor.init_pos)
                 obs_rot = quaternion_to_yaw(torch.tensor(actor.init_ori))
@@ -426,10 +426,10 @@ class Plotter:
             self.gym_world.params['range_y'] = [-y, y]
     
             self.gym_world.params['stationary_percentage'] = 0.01
-            self.gym_world.params['adjustable_percentage'] = 0.40
+            self.gym_world.params['adjustable_percentage'] = 0.25
 
-            self.gym_world.params['stationary_size_noise'] = 0.5
-            self.gym_world.params['adjustable_size_noise'] = 0.5
+            self.gym_world.params['stationary_size_noise'] = 0.50
+            self.gym_world.params['adjustable_size_noise'] = 0.50
  
             mass_threshold = self.gym_world.params['scheduler']['mass_threshold']
 
@@ -460,7 +460,7 @@ class Plotter:
                     continue
 
                 mass = actor.mass
-                size = [dim - 1e-1 for dim in actor.size]
+                size = [dim - 1e-3 for dim in actor.size]
 
                 obs_pos = torch.tensor(actor.init_pos)
                 obs_rot = quaternion_to_yaw(torch.tensor(actor.init_ori))
