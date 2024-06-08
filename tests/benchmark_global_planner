@@ -29,17 +29,24 @@ class BenchmarkGlobalPlanner:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
 
-    DIMENSION_ROOM = [2.1]
-    ROOM_ITERATION = 10
+    # EXPERIMENT 2
+    EXP_2_DIMENSION_ROOM = [2., 4.]
+    EXP_2_ROOM_ITERATION = 200
+
+    # EXPERIMENT 3
+    EXP_3_OBSTACLES_ROOM = range(0, 30, 1)
+    EXP_3_ROOM_ITERATONS = 100
+    EXP_3_ROOM_DIMENSION = 4
 
     MAX_EXEC_DURATION = 300
 
     USE_NVG = True
-    USE_SVG = True
+    USE_SVG = True 
     USE_PRM = False
     USE_RRT = True
 
-    RUN_SIM = True
+    RUN_SIM = False
+    SAVE_IMG = False
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world
@@ -70,17 +77,24 @@ class BenchmarkGlobalPlanner:
 
         return cls(gym_world, scheduler, layout, config, file_path)
 
-    def run_global_planners(self):
+    def run_experiment_2(self):
         for dimension in self.DIMENSION_ROOM:
             for _ in range(self.ROOM_ITERATION):
-                self.apply_sequence(dimension, dimension,
-                                    mode='random',
-                                    stationary_percentage=.01,
-                                    adjustable_percentage=.10)
+                self.apply_sequence(dimension, dimension, mode='grid')
 
                 if rospy.is_shutdown():
                     break
 
+            if rospy.is_shutdown():
+                break
+
+    def run_experiment_3(self):
+        for occupation in self.EXP_3_OBSTACLES_ROOM:
+            occupation_percentage = occupation / 100
+            x_dim = y_dim = self.EXP_3_ROOM_DIMENSION
+
+            self.apply_sequence(x_dim, y_dim, mode='random', stationary_percentage=0.01,
+                                adjustable_percentage=occupation_percentage)
             if rospy.is_shutdown():
                 break
 
@@ -97,7 +111,7 @@ class BenchmarkGlobalPlanner:
         q_goal = self.scheduler.robot_goal_pos
 
         name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
-        configurations["ID"] = name
+        configurations["ID"] = f"{name}"
 
         if rospy.is_shutdown():
             return
@@ -189,20 +203,15 @@ class BenchmarkGlobalPlanner:
         if rospy.is_shutdown():
             return
 
-        self.save_snapshot_paths(
-            name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
-        self.save_snapshot_graph(name, (x, y), actors,
-                                 nvg_graph, svg_graph, prm_graph, rrt_graph)
-        rospy.loginfo(
-            f'Saved snapshots of the environment and graphs under ID: {name}')
+        if self.SAVE_IMG:
+            self.save_snapshot_paths(name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
+            self.save_snapshot_graph(name, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
+            rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
 
         self.save_result(self.file_path, configurations)
         rospy.loginfo(f'Saved information to: {self.file_path}')
 
     def initiate_world(self, x, y, mode='random'):
-        self.gym_world.params['stationary_size_noise'] = 0.50
-        self.gym_world.params['adjustable_size_noise'] = 0.50
-
         self.gym_world.params['range_x'] = [-x, x]
         self.gym_world.params['range_y'] = [-y, y]
 
@@ -255,8 +264,7 @@ class BenchmarkGlobalPlanner:
                 print(f'{i}: ', actor.name, actor.mass,
                       actor.init_pos, actor.init_ori, actor.size)
 
-            configurations = {"room_area": room_area,
-                              "stationary_area": stationary_area, "adjustable_area": adjustable_area}
+            configurations = {"room_area": room_area, "stationary_area": stationary_area, "adjustable_area": adjustable_area}
 
         elif mode == 'grid':
             additions = self.gym_world.grid_additions()
@@ -274,8 +282,7 @@ class BenchmarkGlobalPlanner:
                     -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
                 actor.mass = actor.mass + actor_mass_noise
 
-                print(f'{i}: ', actor.name, actor.mass,
-                      actor.init_pos, actor.init_ori, actor.size)
+                print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
 
             amount_of_walls = len(self.gym_world.create_walls())
             obstacle_amount = len(additions) - amount_of_walls

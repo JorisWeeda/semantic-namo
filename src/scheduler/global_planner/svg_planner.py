@@ -51,7 +51,7 @@ class SVG:
             {**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
             graph = self.add_node_to_graph(
-                graph, node, non_inflated_shapes.values(), knn=4)
+                graph, node, non_inflated_shapes.values(), knn=5)
 
         return graph
 
