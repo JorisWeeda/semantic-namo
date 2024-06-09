@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper  # type: ignore
+
+import hydra
+import rospy
+import time
+import shapely
+import datetime
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
+from tf.transformations import euler_from_quaternion
+from shapely.affinity import rotate
+
+from environment import SimulateWorld
+from scheduler import Scheduler
+
+
+class Experiment1:
+
+    MAX_EXEC_DURATION = 300
+
+    RUN_SIM = True
+    SAVE_IMG = False
+
+    def __init__(self, gym_world, scheduler, layout, config):
+        self.gym_world = gym_world
+        self.scheduler = scheduler
+
+        self.config = config
+        self.layout = layout
+
+        self.device = self.gym_world.device
+
+    @classmethod
+    def create_benchmark_experiment_1(cls):
+        rospy.init_node('experiment_1_node')
+        hydra.initialize(config_path="../config", version_base=None)
+
+        config = rospy.get_param('~config')
+        layout = 'experiment_1'
+
+        gym_world = SimulateWorld.build(hydra.compose(config), layout, True)
+        scheduler = Scheduler.create_scheduler(layout)
+
+        return cls(gym_world, scheduler, layout, config)
+
+    def run_experiment_1(self):
+        rospy.loginfo(f'Running experiment 1')
+
+        robot_dof = self.gym_world.get_robot_dofs()
+        actors = self.gym_world.get_actor_states()
+
+        configurations = {}
+
+        name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
+        configurations["ID"] = f"{name}"
+
+        svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+
+        configurations["svg_result"] = svg_result
+        configurations["svg_time"] = svg_time
+        configurations["svg_cost"] = svg_cost
+
+        if self.RUN_SIM:
+            rospy.loginfo(f'Executing SVG path in environment.')
+            run_svg_result, run_svg_time, run_svg_force = self.run_trajectory(svg_result)
+
+            configurations["run_svg_result"] = run_svg_result
+            configurations["run_svg_force"] = run_svg_force
+            configurations["run_svg_time"] = run_svg_time
+
+    def run_path_planner(self, actors, planner_mode):
+        start_time = time.time()
+        result, graph, path, cost = self.scheduler.generate_path(
+            self.gym_world.get_robot_dofs(), actors, mode=planner_mode)
+
+        exec_time = time.time() - start_time
+        return result, graph, exec_time, path, cost
+
+    def run_trajectory(self, path_is_ready):
+        exec_net_forces = 0.0
+        exec_run_result = False
+        exec_start_time = time.time()
+
+        while path_is_ready:
+            if self.gym_world.is_goal_reached and self.scheduler.path is not None:
+                waypoint = self.scheduler.get_next_waypoint()
+
+                if waypoint is not None:
+                    goal = [waypoint[0], waypoint[1], np.pi/2]
+                    self.gym_world.update_objective(goal)
+
+            _ = self.gym_world.run()
+
+            exec_net_forces += self.gym_world.get_net_forces()
+
+            if self.gym_world.is_goal_reached and self.scheduler.is_finished():
+                exec_run_result = True
+                break
+
+            if time.time() - exec_start_time > self.MAX_EXEC_DURATION:
+                rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
+                break
+
+        exec_time = time.time() - exec_start_time
+        return exec_run_result, exec_time, exec_net_forces
+
+    def show_snapshot_environment(self):
+        actors = self.gym_world.get_actor_states()
+        robot_dof = self.gym_world.get_robot_dofs()
+
+        q_init = [robot_dof[0], robot_dof[2]]
+        q_goal = self.gym_world.params['goal']
+
+        _, ax = plt.subplots(figsize=(25, 5))
+
+        max_mass = self.gym_world.params['scheduler']['mass_threshold']
+        for actor, state in zip(*actors):
+            mass = actor.mass
+            size = actor.size
+
+            obs_pos = state[:2]
+            obs_rot = Experiment1.quaternion_to_yaw(state[3:7])
+
+            corners = [
+                (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+            ]
+
+            polygon = shapely.Polygon(corners)
+            polygon = rotate(polygon, obs_rot, use_radians=True)
+
+            patch_polygon = Polygon(
+                polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / max_mass))
+            ax.add_patch(patch_polygon)
+
+        ax.plot(q_init[0], q_init[1], color='green', marker='o', markersize=5, label='Start Node')
+        ax.plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=5, label='Goal Node')
+
+        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
+        cbar = plt.colorbar(sm, ax=ax)
+        cbar.set_label('Mass')
+
+        ax.autoscale(enable=True)
+        ax.set_title('Obstacles and Paths')
+        ax.set_xlabel('X Axis')
+        ax.set_ylabel('Y Axis')
+        ax.set_aspect('equal')
+        plt.show()
+
+    @staticmethod
+    def quaternion_to_yaw(quaternion):
+        return euler_from_quaternion(quaternion)[-1]
+
+
+if __name__ == "__main__":
+    benchmark = Experiment1.create_benchmark_experiment_1()
+    benchmark.run_experiment_1()
+    benchmark.gym_world.destroy()
+
+    rospy.signal_shutdown("Benchmark experiment 1 completed. Shutting down ROS.")

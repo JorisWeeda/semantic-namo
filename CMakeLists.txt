@@ -163,8 +163,10 @@ catkin_install_python(PROGRAMS
   scripts/controller
   scripts/environment
   scripts/visualisation
-  tests/benchmark_global_planner
-  tests/benchmark_passage_nodes
+  tests/helper_plotter
+  tests/experiment_1
+  tests/experiment_2
+  tests/experiment_3
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

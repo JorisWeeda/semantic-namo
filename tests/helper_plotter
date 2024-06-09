@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+import copy
+import rospy
+import hydra
+import random
+import numpy as np
+import matplotlib.pyplot as plt
+
+import shapely
+from shapely import buffer
+from shapely.ops import nearest_points
+
+from matplotlib.patches import Polygon
+from matplotlib import colors
+
+from environment import SimulateWorld
+from scheduler import Scheduler
+
+
+class HelperPlotter:
+
+    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_polygon_plotter/'
+
+    DIMENSION_ROOM = [2.5]
+
+    def __init__(self, gym_world, scheduler, layout, config):
+        self.gym_world = gym_world
+        self.scheduler = scheduler
+
+        self.config = config
+        self.layout = layout
+
+    @classmethod
+    def create_helper_plotter(cls):
+        rospy.init_node('helper_plotter_node')
+        hydra.initialize(config_path="../config", version_base=None)
+    
+        config = rospy.get_param('~config')
+        layout = rospy.get_param('~layout')
+
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
+        scheduler = Scheduler.create_scheduler(layout)
+
+        return cls(gym_world, scheduler, layout, config)
+
+    def plot_inflation_nodes(self):
+        hexagon_coords = [(0, 1), (0.866, 0.5), (0.866, -0.5),
+                          (0, -1), (-0.866, -0.5), (-0.866, 0.5)]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        inflated_hexagon = buffer(hexagon, self.scheduler.svg_planner.path_inflation, cap_style='flat', join_style='mitre')
+
+        _, axs = plt.subplots(1, 3, figsize=(25, 5))
+
+        ax_polygon = Polygon(hexagon.exterior.coords, color='grey', label=f'Mass 1 ({10.:.1f} KG)')
+        axs[0].add_patch(copy.copy(ax_polygon))
+        axs[1].add_patch(copy.copy(ax_polygon))
+        axs[2].add_patch(copy.copy(ax_polygon))
+
+        axs[1].plot(*inflated_hexagon.exterior.xy, 'r--', alpha=1.0, label='Inflated Obstacle Boundary')
+        axs[2].plot(*inflated_hexagon.exterior.xy, 'r--', alpha=0.5, label='Inflated Obstacle Boundary')
+
+        margin_distance = np.vstack([hexagon.exterior.coords[0], inflated_hexagon.exterior.coords[0]])
+        axs[1].plot(margin_distance[:, 0], margin_distance[:, 1], c='red', alpha=0.8, label='Safety Margin (r)')
+
+        initial_nodes = self.scheduler.svg_planner.generate_nodes([inflated_hexagon])
+        axs[2].scatter(initial_nodes[:, 0], initial_nodes[:, 1], c='blue', label='Inflation Nodes')
+
+        for ax in axs:
+            ax.set_xlim(-3, 3)
+            ax.set_ylim(-3, 3)
+            ax.set_xlabel('X Axis')
+            ax.set_ylabel('Y Axis')
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.20)
+            ax.legend()
+
+        axs[0].set_title('Stage 1')
+        axs[1].set_title('Stage 2')
+        axs[2].set_title('Stage 3')
+        plt.show()
+
+    def plot_passage_nodes(self):
+        hexagon_coords = [(np.cos(theta) - 1.5, np.sin(theta)) for theta in np.linspace(0, 2*np.pi, 7)]
+        squared_coords = [(x + 1., y) for (x, y) in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
+
+        hexagon = shapely.Polygon(hexagon_coords)
+        squared = shapely.Polygon(squared_coords)
+
+        shapes = {'obstacle 1': hexagon, 'obstacle 2': squared}
+        masses = {'obstacle 1': 8, 'obstacle 2': 5}
+
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.scheduler.svg_planner.mass_threshold)
+
+        _, axs = plt.subplots(1, 3, figsize=(25, 5))
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical', pad=0.05)
+        cbar.set_label('Mass')
+
+        ax_hexagon = Polygon(hexagon.exterior.coords, color=cmap(norm(8.)), label=f'Mass 1 ({8.:.1f} KG)')
+        ax_squared = Polygon(squared.exterior.coords, color=cmap(norm(5.)), label=f'Mass 2 ({5.:.2f} KG)')
+
+        axs[0].add_patch(copy.copy(ax_hexagon))
+        axs[0].add_patch(copy.copy(ax_squared))
+        axs[1].add_patch(copy.copy(ax_hexagon))
+        axs[1].add_patch(copy.copy(ax_squared))
+        axs[2].add_patch(copy.copy(ax_hexagon))
+        axs[2].add_patch(copy.copy(ax_squared))
+
+        nearest_point_hexagon, nearest_point_squared = nearest_points(hexagon, squared)
+        axs[0].scatter(nearest_point_hexagon.x, nearest_point_hexagon.y, s=20, c='red', label='Nearest Point Obstacle 1')
+        axs[0].scatter(nearest_point_squared.x, nearest_point_squared.y, s=20, c='orange', label='Nearest Point Obstacle 2')
+
+        shortest_line = shapely.shortest_line(hexagon, squared)
+        axs[1].plot(*shortest_line.coords.xy, c='blue', label='Shortest Line')
+
+        passage_node = self.scheduler.svg_planner.generate_passages(shapes, masses)
+        axs[2].scatter(passage_node[:, 0], passage_node[:, 1], c='blue', label='Passage Node')
+
+        for ax in axs:
+            ax.set_xlim(-3, 3)
+            ax.set_ylim(-3, 3)
+            ax.set_xlabel('X Axis')
+            ax.set_ylabel('Y Axis')
+            ax.set_aspect('equal')
+            ax.grid(True, alpha=0.20)
+            ax.legend()
+
+        axs[0].set_title('Stage 1')
+        axs[1].set_title('Stage 2')
+        axs[2].set_title('Stage 3')
+        plt.show()
+
+    def plot_random_examples_of_passage_nodes(self):
+        fig, axs = plt.subplots(2, 3, figsize=(18, 18))
+        fig.suptitle('Random Examples of Passage Nodes', fontsize=20)
+        
+        self.scheduler.svg_planner.path_inflation = 1.0 # for demonstartion purposes
+        
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.scheduler.svg_planner.mass_threshold)
+
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical', pad=0.05)
+        cbar.set_label('Mass')
+        
+        for i, ax in enumerate(axs.flatten()):
+            num_vertices_1 = random.randint(5, 8)
+            num_vertices_2 = random.randint(5, 8)
+
+            poly_1 = self.generate_random_convex_polygon(-1.5, 0, num_vertices_1)
+            poly_2 = self.generate_random_convex_polygon(1.5, 0, num_vertices_2)
+
+            mass_1 = random.uniform(1, self.scheduler.svg_planner.mass_threshold)
+            mass_2 = random.uniform(1, self.scheduler.svg_planner.mass_threshold)
+            
+            shapes = {'polygon 1': poly_1, 'polygon 2': poly_2}
+            masses = {'polygon 1': mass_1, 'polygon 2': mass_2}
+            
+            ax_polygon_1 = Polygon(poly_1.exterior.coords, color=cmap(norm(mass_1)), label=f'Mass 1 ({mass_1:.2f} KG)')
+            ax_polygon_2 = Polygon(poly_2.exterior.coords, color=cmap(norm(mass_2)), label=f'Mass 2 ({mass_2:.2f} KG)')
+
+            ax.add_patch(ax_polygon_1)
+            ax.add_patch(ax_polygon_2)
+
+            nearest_point_poly1, nearest_point_poly2 = nearest_points(poly_1, poly_2)
+            line_length = nearest_point_poly1.distance(nearest_point_poly2)
+            ax.plot([nearest_point_poly1.x, nearest_point_poly2.x], 
+                    [nearest_point_poly1.y, nearest_point_poly2.y], 
+                    linestyle='dotted', color='orange', linewidth=1.5, label=f'Nearest Distance = {line_length:.2f}')
+
+            ax.scatter(nearest_point_poly1.x, nearest_point_poly1.y, s=10, color='orange')
+            ax.scatter(nearest_point_poly2.x, nearest_point_poly2.y, s=10, color='orange')
+
+            passage_node = self.scheduler.svg_planner.generate_passages(shapes, masses)
+            ax.scatter(passage_node[:, 0], passage_node[:, 1], s=20, c='blue', label='Passage Node')
+
+            ax.set_xlim(-2, 2)
+            ax.set_ylim(-2, 2)
+            ax.set_xlabel('X Axis')
+            ax.set_ylabel('Y Axis')
+            ax.set_aspect('equal')
+            
+            ax.grid(True, alpha=0.2)
+            ax.set_title(f'Example {i+1}')
+            
+            ax.legend()
+            
+        plt.show()
+
+    @staticmethod
+    def generate_random_convex_polygon(center_x, center_y, num_vertices, radius=1):
+        angles = np.sort(np.random.uniform(0, 2 * np.pi, num_vertices))
+        stretch_x = random.uniform(0.5, 1.5)
+        stretch_y = random.uniform(0.5, 1.5)
+        points = [(center_x + np.cos(angle) * radius * stretch_x, center_y + np.sin(angle) * radius * stretch_y) for angle in angles]
+        return shapely.Polygon(points).convex_hull
+
+
+if __name__ == "__main__":
+    plotter = HelperPlotter.create_helper_plotter()
+
+    # plotter.plot_inflation_nodes()
+    # plotter.plot_passage_nodes()
+    plotter.plot_random_examples_of_passage_nodes()
+
+    rospy.signal_shutdown("Tasks completed. Shutting down ROS.")

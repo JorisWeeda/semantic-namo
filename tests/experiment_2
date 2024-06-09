@@ -2,46 +2,37 @@
 from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper  # type: ignore
 
 import os
-import copy
 import csv
-import datetime
-import hydra
-import rospy
+import copy
 import time
+import rospy
+import hydra
 import torch
-import shapely
-import matplotlib
-
+import datetime
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-from tf.transformations import euler_from_quaternion
+
+import shapely
 from shapely.affinity import rotate
+from tf.transformations import euler_from_quaternion
+
+from matplotlib.patches import Polygon
 
 from environment import SimulateWorld
 from scheduler import Scheduler
 
 
-matplotlib.use('Agg')
+class Experiment2:
 
-
-class BenchmarkGlobalPlanner:
-
-    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/benchmark_global_planner/'
-
-    # EXPERIMENT 2
-    EXP_2_DIMENSION_ROOM = [2., 4.]
-    EXP_2_ROOM_ITERATION = 200
-
-    # EXPERIMENT 3
-    EXP_3_OBSTACLES_ROOM = range(0, 30, 1)
-    EXP_3_ROOM_ITERATONS = 100
-    EXP_3_ROOM_DIMENSION = 4
-
+    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/experiment_2/'
+    
     MAX_EXEC_DURATION = 300
+   
+    DIMENSION_ROOM = [2.5, 5.0]
+    ROOM_ITERATION = 200
 
     USE_NVG = True
-    USE_SVG = True 
+    USE_SVG = True
     USE_PRM = False
     USE_RRT = True
 
@@ -58,15 +49,23 @@ class BenchmarkGlobalPlanner:
 
         self.device = self.gym_world.device
 
+    def __init__(self, gym_world, scheduler, layout, config):
+        self.gym_world = gym_world
+        self.scheduler = scheduler
+
+        self.config = config
+        self.layout = layout
+
     @classmethod
-    def create_benchmark_global_planner(cls):
-        rospy.init_node('test_global_planner_node')
+    def create_benchmark_experiment_2(cls):
+        rospy.init_node('experiment_2_node')
+
         hydra.initialize(config_path="../config", version_base=None)
 
         config = rospy.get_param('~config')
         layout = rospy.get_param('~layout')
 
-        gym_world = SimulateWorld.create(hydra.compose(config), layout, True)
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
         scheduler = Scheduler.create_scheduler(layout)
 
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
@@ -78,9 +77,12 @@ class BenchmarkGlobalPlanner:
         return cls(gym_world, scheduler, layout, config, file_path)
 
     def run_experiment_2(self):
+        rospy.loginfo(f'Running experiment 2')
+
         for dimension in self.DIMENSION_ROOM:
             for _ in range(self.ROOM_ITERATION):
-                self.apply_sequence(dimension, dimension, mode='grid')
+
+                self.apply_sequence(dimension, dimension)
 
                 if rospy.is_shutdown():
                     break
@@ -88,22 +90,9 @@ class BenchmarkGlobalPlanner:
             if rospy.is_shutdown():
                 break
 
-    def run_experiment_3(self):
-        for occupation in self.EXP_3_OBSTACLES_ROOM:
-            occupation_percentage = occupation / 100
-            x_dim = y_dim = self.EXP_3_ROOM_DIMENSION
-
-            self.apply_sequence(x_dim, y_dim, mode='random', stationary_percentage=0.01,
-                                adjustable_percentage=occupation_percentage)
-            if rospy.is_shutdown():
-                break
-
-    def apply_sequence(self, x, y, mode='grid', stationary_percentage=0, adjustable_percentage=0.):
-        self.gym_world.params['stationary_percentage'] = stationary_percentage
-        self.gym_world.params['adjustable_percentage'] = adjustable_percentage
-
-        rospy.loginfo(f'Creating environment (x:{x} y:{y}) with mode:{mode}')
-        additions, actors, configurations = self.initiate_world(x, y, mode=mode)
+    def apply_sequence(self, x, y):
+        rospy.loginfo(f'Creating environment x:{x} y:{y}')
+        additions, actors, configurations = self.initiate_world(x, y)
         self.reset_robot()
 
         robot_dof = self.gym_world.get_robot_dofs()
@@ -204,14 +193,31 @@ class BenchmarkGlobalPlanner:
             return
 
         if self.SAVE_IMG:
-            self.save_snapshot_paths(name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
-            self.save_snapshot_graph(name, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
-            rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
+            self.save_snapshot_paths(
+                name, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
+            self.save_snapshot_graph(
+                name, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
+            rospy.loginfo(
+                f'Saved snapshots of the environment and graphs under ID: {name}')
 
         self.save_result(self.file_path, configurations)
         rospy.loginfo(f'Saved information to: {self.file_path}')
 
-    def initiate_world(self, x, y, mode='random'):
+    def reset_robot(self):
+        robot_state = self.gym_world.params["environment"]["robot"]["init_state"]
+        x, y, yaw = robot_state[0], robot_state[1], robot_state[2] * \
+            (np.pi / 180.0)
+
+        self.gym_world.simulation.set_actor_dof_state(
+            torch.tensor([x, 0., y, 0., yaw, 0.], device=self.device))
+        self.gym_world.update_objective((x, y, yaw), (0., 0.))
+
+        robot_dof = self.gym_world.get_robot_dofs()
+        robot_dof[0] = robot_state[0]
+        robot_dof[2] = robot_state[1]
+        robot_dof[4] = robot_state[2]
+
+    def initiate_world(self, x, y):
         self.gym_world.params['range_x'] = [-x, x]
         self.gym_world.params['range_y'] = [-y, y]
 
@@ -235,61 +241,33 @@ class BenchmarkGlobalPlanner:
         robot_dof[2] = -y + 0.5
         robot_dof[4] = torch.pi / 2
 
-        self.gym_world.params["environment"]["robot"]["init_state"] = [robot_dof[0], robot_dof[2], 0]
+        self.gym_world.params["environment"]["robot"]["init_state"] = [
+            robot_dof[0], robot_dof[2], 0]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
 
-        if mode == 'random':
-            additions = self.gym_world.random_additions()
-            actors = [ActorWrapper(**addition) for addition in additions]
+        additions = self.gym_world.grid_additions()
+        actors = [ActorWrapper(**addition) for addition in additions]
 
-            room_area = (2 * x) * (2 * y)
-            stationary_area = 0
-            adjustable_area = 0
+        room_area = (2 * x) * (2 * y)
 
-            state_ten = torch.zeros(len(actors), 13)
+        state_ten = torch.zeros(len(actors), 13)
+        for i, actor in enumerate(actors):
+            state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
+            state_ten[i, 3:7] = torch.tensor(
+                actor.init_ori, device=self.device)
 
-            for i, actor in enumerate(actors):
-                state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
-                state_ten[i, 3:7] = torch.tensor(actor.init_ori, device=self.device)
+            actor_mass_noise = np.random.uniform(
+                -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+            actor.mass = actor.mass + actor_mass_noise
 
-                actor_mass_noise = np.random.uniform(
-                    -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
-                actor.mass = actor.mass + actor_mass_noise
+            print(f'{i}: ', actor.name, actor.mass,
+                  actor.init_pos, actor.init_ori, actor.size)
 
-                if actor.mass >= self.scheduler.prm_planner.mass_threshold:
-                    stationary_area += (actor.size[0] * actor.size[1])
-                else:
-                    adjustable_area += (actor.size[0] * actor.size[1])
+        amount_of_walls = len(self.gym_world.create_walls())
+        obstacle_amount = len(additions) - amount_of_walls
 
-                print(f'{i}: ', actor.name, actor.mass,
-                      actor.init_pos, actor.init_ori, actor.size)
-
-            configurations = {"room_area": room_area, "stationary_area": stationary_area, "adjustable_area": adjustable_area}
-
-        elif mode == 'grid':
-            additions = self.gym_world.grid_additions()
-            actors = [ActorWrapper(**addition) for addition in additions]
-
-            room_area = (2 * x) * (2 * y)
-
-            state_ten = torch.zeros(len(actors), 13)
-
-            for i, actor in enumerate(actors):
-                state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
-                state_ten[i, 3:7] = torch.tensor(actor.init_ori, device=self.device)
-
-                actor_mass_noise = np.random.uniform(
-                    -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
-                actor.mass = actor.mass + actor_mass_noise
-
-                print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
-
-            amount_of_walls = len(self.gym_world.create_walls())
-            obstacle_amount = len(additions) - amount_of_walls
-
-            configurations = {"room_area": room_area,
-                              'obstacle_amount': obstacle_amount}
-
+        configurations = {"room_area": room_area,
+                          'obstacle_amount': obstacle_amount}
         return additions, (actors, state_ten), configurations
 
     def run_path_planner(self, actors, planner_mode):
@@ -326,25 +304,92 @@ class BenchmarkGlobalPlanner:
                 break
 
             if time.time() - exec_start_time > self.MAX_EXEC_DURATION:
-                rospy.logwarn(
-                    f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
+                rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
                 break
 
         exec_time = time.time() - exec_start_time
         return exec_run_result, exec_time, exec_net_forces
 
-    def reset_robot(self):
-        robot_state = self.gym_world.params["environment"]["robot"]["init_state"]
-        (x, y,
-         yaw) = robot_state[0], robot_state[1], robot_state[2] * (np.pi / 180.0)
+    def show_snapshot_environment(self):
+        _, axs = plt.subplots(1, len(self.DIMENSION_ROOM))
 
-        self.gym_world.simulation.set_actor_dof_state(torch.tensor([x, 0., y, 0., yaw, 0.], device=self.device))
-        self.gym_world.update_objective((x, y, yaw), (0., 0.))
+        for i, dimension in enumerate(self.DIMENSION_ROOM):
+            x = y = dimension
 
-        robot_dof = self.gym_world.get_robot_dofs()
-        robot_dof[0] = robot_state[0]
-        robot_dof[2] = robot_state[1]
-        robot_dof[4] = robot_state[2]
+            self.gym_world.params['range_x'] = [-x, x]
+            self.gym_world.params['range_y'] = [-y, y]
+
+            mass_threshold = self.gym_world.params['scheduler']['mass_threshold']
+
+            self.scheduler.robot_goal_pos[0] = x - 0.5
+            self.scheduler.robot_goal_pos[1] = y - 0.5
+
+            robot_dof = self.gym_world.get_robot_dofs()
+            robot_dof[0] = -x + 0.5
+            robot_dof[2] = -y + 0.5
+            robot_dof[4] = torch.pi / 2
+
+            self.gym_world.params["environment"]["robot"]["init_state"] = [
+                robot_dof[0], robot_dof[2], 0]
+            self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
+
+            q_init = [robot_dof[0], robot_dof[2], 0]
+            q_goal = self.scheduler.robot_goal_pos
+
+            additions = self.gym_world.grid_additions()
+            actors = [ActorWrapper(**addition) for addition in additions]
+
+            for actor in actors:
+                actor_mass_noise = np.random.uniform(
+                    -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+                actor.mass = actor.mass + actor_mass_noise
+
+                print(actor.name, actor.mass, actor.init_pos,
+                      actor.init_ori, actor.size)
+
+                if actor.fixed:
+                    continue
+
+                mass = actor.mass
+                size = [dim - 1e-3 for dim in actor.size]
+
+                obs_pos = torch.tensor(actor.init_pos)
+                obs_rot = Experiment2.quaternion_to_yaw(
+                    torch.tensor(actor.init_ori))
+
+                corners = [
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+                ]
+
+                polygon = shapely.Polygon(corners)
+                polygon = rotate(polygon, obs_rot,
+                                 origin=obs_pos, use_radians=True)
+
+                patch_polygon = Polygon(
+                    polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / mass_threshold))
+                axs[i].add_patch(patch_polygon)
+
+            axs[i].plot(q_init[0], q_init[1], color='green',
+                        marker='o', markersize=10, label='Start Node')
+            axs[i].plot(q_goal[0], q_goal[1], color='red',
+                        marker='o', markersize=10, label='Goal Node')
+
+            axs[i].set_xlim(-x, x)
+            axs[i].set_ylim(-y, y)
+
+            axs[i].set_title(f'Room {i + 1}')
+            axs[i].set_xlabel('x-axis')
+            axs[i].set_ylabel('y axis')
+            axs[i].set_aspect('equal')
+
+        sm = plt.cm.ScalarMappable(
+            cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=mass_threshold))
+        cbar = plt.colorbar(sm, ax=axs)
+        cbar.set_label('Mass')
+        plt.show()
 
     @staticmethod
     def save_result(path, configurations):
@@ -363,8 +408,7 @@ class BenchmarkGlobalPlanner:
     def save_snapshot_paths(name, limits, actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path):
         fig, ax = plt.subplots(figsize=(9, 9))
 
-        max_mass = max(actor.mass for actor, _ in zip(
-            *actors) if not actor.fixed)
+        max_mass = max(actor.mass for actor, _ in zip(*actors) if not actor.fixed)
         for actor, state in zip(*actors):
             if actor.fixed:
                 continue
@@ -373,7 +417,7 @@ class BenchmarkGlobalPlanner:
             size = actor.size
 
             obs_pos = state[:2]
-            obs_rot = BenchmarkGlobalPlanner.quaternion_to_yaw(state[3:7])
+            obs_rot = Experiment2.quaternion_to_yaw(state[3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -429,7 +473,7 @@ class BenchmarkGlobalPlanner:
         ax.legend()
 
         folder = os.path.join(os.path.expanduser(
-            '~'), BenchmarkGlobalPlanner.DATA_FOLDER, 'images')
+            '~'), Experiment2.DATA_FOLDER, 'images')
         os.makedirs(folder, exist_ok=True)
 
         image_file_path = os.path.join(folder, f'{name}_paths.png')
@@ -450,7 +494,7 @@ class BenchmarkGlobalPlanner:
             size = actor.size
 
             obs_pos = state[:2]
-            obs_rot = BenchmarkGlobalPlanner.quaternion_to_yaw(state[3:7])
+            obs_rot = Experiment2.quaternion_to_yaw(state[3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -518,7 +562,7 @@ class BenchmarkGlobalPlanner:
             axs[1, 1].set_ylabel('Y Position')
 
         folder = os.path.join(os.path.expanduser(
-            '~'), BenchmarkGlobalPlanner.DATA_FOLDER, 'images')
+            '~'), Experiment2.DATA_FOLDER, 'images')
         os.makedirs(folder, exist_ok=True)
 
         image_file_path = os.path.join(folder, f'{name}_graphs.png')
@@ -531,8 +575,8 @@ class BenchmarkGlobalPlanner:
 
 
 if __name__ == "__main__":
-    benchmark = BenchmarkGlobalPlanner.create_benchmark_global_planner()
-    benchmark.run_global_planners()
+    benchmark = Experiment2.create_benchmark_experiment_2()
+    benchmark.show_snapshot_environment()
     benchmark.gym_world.destroy()
 
-    rospy.signal_shutdown("Benchmark tasks completed. Shutting down ROS.")
+    rospy.signal_shutdown("Benchmark experiment 2 completed. Shutting down ROS.")
