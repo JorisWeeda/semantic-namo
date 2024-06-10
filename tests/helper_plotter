@@ -201,9 +201,6 @@ class HelperPlotter:
 
 if __name__ == "__main__":
     plotter = HelperPlotter.create_helper_plotter()
-
-    # plotter.plot_inflation_nodes()
-    # plotter.plot_passage_nodes()
     plotter.plot_random_examples_of_passage_nodes()
 
     rospy.signal_shutdown("Tasks completed. Shutting down ROS.")

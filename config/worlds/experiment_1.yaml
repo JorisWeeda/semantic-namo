@@ -60,18 +60,18 @@ environment:
             init_pos: [-4., -3.4, 0.1]
             init_ori: [0.0, 0.0, 0.0]
 
-        - box:
-            name: "Box 3"
-            init_pos: [-3., 0., 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - box:
-            name: "Box 4"
-            init_pos: [-2., 0., 0.1]
-            init_ori: [0.0, 0.0, 0.0]
-        - box:
-            name: "Box 5"
-            init_pos: [-1., 0., 0.1]
-            init_ori: [0.0, 0.0, 0.0]
+        # - box:
+        #     name: "Box 3"
+        #     init_pos: [-3., 0., 0.1]
+        #     init_ori: [0.0, 0.0, 0.0]
+        # - box:
+        #     name: "Box 4"
+        #     init_pos: [-2., 0., 0.1]
+        #     init_ori: [0.0, 0.0, 0.0]
+        # - box:
+        #     name: "Box 5"
+        #     init_pos: [-1., 0., 0.1]
+        #     init_ori: [0.0, 0.0, 0.0]
 
         - box:
             name: "Box 6"

@@ -41,7 +41,7 @@ class Experiment1:
         config = rospy.get_param('~config')
         layout = 'experiment_1'
 
-        gym_world = SimulateWorld.build(hydra.compose(config), layout, True)
+        gym_world = SimulateWorld.build(hydra.compose(config), layout, False)
         scheduler = Scheduler.create_scheduler(layout)
 
         return cls(gym_world, scheduler, layout, config)
@@ -49,7 +49,6 @@ class Experiment1:
     def run_experiment_1(self):
         rospy.loginfo(f'Running experiment 1')
 
-        robot_dof = self.gym_world.get_robot_dofs()
         actors = self.gym_world.get_actor_states()
 
         configurations = {}
@@ -58,6 +57,7 @@ class Experiment1:
         configurations["ID"] = f"{name}"
 
         svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+        self.show_snapshot_environment(svg_path)
 
         configurations["svg_result"] = svg_result
         configurations["svg_time"] = svg_time
@@ -70,6 +70,8 @@ class Experiment1:
             configurations["run_svg_result"] = run_svg_result
             configurations["run_svg_force"] = run_svg_force
             configurations["run_svg_time"] = run_svg_time
+
+        benchmark.show_snapshot_environment(svg_path)
 
     def run_path_planner(self, actors, planner_mode):
         start_time = time.time()
@@ -107,7 +109,7 @@ class Experiment1:
         exec_time = time.time() - exec_start_time
         return exec_run_result, exec_time, exec_net_forces
 
-    def show_snapshot_environment(self):
+    def show_snapshot_environment(self, path=None):
         actors = self.gym_world.get_actor_states()
         robot_dof = self.gym_world.get_robot_dofs()
 
@@ -140,6 +142,10 @@ class Experiment1:
 
         ax.plot(q_init[0], q_init[1], color='green', marker='o', markersize=5, label='Start Node')
         ax.plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=5, label='Goal Node')
+
+        if path is not None:
+            path = np.array(path)
+            ax.plot(path[:, 0], path[:, 1], color='darkgreen', marker='o', markersize=3, label='Path')
 
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
         cbar = plt.colorbar(sm, ax=ax)
