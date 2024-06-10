@@ -47,11 +47,9 @@ class SVG:
         adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items(
         ) if masses[name] < self.mass_threshold}
 
-        passage_nodes = self.generate_passages(
-            {**stationary_polygons, **adjustable_polygons}, masses)
+        passage_nodes = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
-            graph = self.add_node_to_graph(
-                graph, node, non_inflated_shapes.values(), knn=5)
+            graph = self.add_node_to_graph(graph, node, non_inflated_shapes.values(), knn=8)
 
         return graph
 
@@ -59,21 +57,23 @@ class SVG:
         new_node_index = len(graph.nodes)
         graph.add_node(new_node_index, pos=new_node[:2], cost=new_node[2])
 
+        search_space = None if len(new_node) <= 3 else new_node[3]
+
         node_connections = 0
 
         organized_nodes = self.find_closest_nodes(graph, new_node[:2])
         for (node, node_pos) in organized_nodes:
             if node != new_node_index:
                 edge_line = LineString([node_pos, new_node[:2]])
+                if search_space is not None and edge_line.length > search_space:
+                    break
 
                 if polygons is not None:
                     if not any(edge_line.intersects(polygon) for polygon in polygons):
-                        graph.add_edge(node, new_node_index,
-                                       length=edge_line.length)
+                        graph.add_edge(node, new_node_index, length=edge_line.length)
                         node_connections += 1
                 else:
-                    graph.add_edge(node, new_node_index,
-                                   length=edge_line.length)
+                    graph.add_edge(node, new_node_index, length=edge_line.length)
                     node_connections += 1
 
             if knn and node_connections >= knn:
@@ -137,7 +137,7 @@ class SVG:
         return nodes
 
     def generate_passages(self, shapes, masses, margin=1e-3):
-        passages = np.empty((0, 3), dtype='float')
+        passages = np.empty((0, 4), dtype='float')
 
         obstacles_id_pairs = list(combinations(shapes.keys(), 2))
         for id_1, id_2 in obstacles_id_pairs:
@@ -167,9 +167,15 @@ class SVG:
             else:
                 passage_point = light_point
 
+            exterior = list(light_ob.exterior.coords)
+            segments = [LineString([exterior[i], exterior[i + 1]]).length
+                        for i in range(len(exterior) - 1)]
+
+            search_space = max(segments) + 1e-1
             passage_cost = (2 * self.path_inflation - line_segment.length) * masses[light_id]
-            print(heavy_id, masses[heavy_id], '\t', light_id, masses[light_id], '\t', passage_cost)
-            passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost)))
+
+            passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost, search_space)))
+
         return passages
 
     @staticmethod
