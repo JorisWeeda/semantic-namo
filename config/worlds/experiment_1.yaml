@@ -50,6 +50,12 @@ environment:
             init_pos: [7.0, 2.0, 0.0]
             init_ori: [0.0, 0.0, 0.0]
 
+        - wall:
+            name: "middle-h-wall-3"
+            size: [1.5, 0.2, 0.5]
+            init_pos: [-2.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+
     obstacles:
         - box:
             name: "Box 1"
@@ -60,25 +66,21 @@ environment:
             init_pos: [-4., -3.4, 0.1]
             init_ori: [0.0, 0.0, 0.0]
 
-        # - box:
-        #     name: "Box 3"
-        #     init_pos: [-3., 0., 0.1]
-        #     init_ori: [0.0, 0.0, 0.0]
-        # - box:
-        #     name: "Box 4"
-        #     init_pos: [-2., 0., 0.1]
-        #     init_ori: [0.0, 0.0, 0.0]
-        # - box:
-        #     name: "Box 5"
-        #     init_pos: [-1., 0., 0.1]
-        #     init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 3"
+            init_pos: [-3.25, 0., 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 4"
+            init_pos: [-0.5, 0., 0.1]
+            init_ori: [0.0, 0.0, 0.0]
 
         - box:
-            name: "Box 6"
+            name: "Box 5"
             init_pos: [4.5, 2., 0.1]
             init_ori: [0.0, 0.0, 0.0]
         - box:
-            name: "Box 7"
+            name: "Box 6"
             init_pos: [4.5, 3.0, 0.1]
             init_ori: [0.0, 0.0, 0.0]
 

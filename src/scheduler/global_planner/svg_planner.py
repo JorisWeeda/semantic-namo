@@ -171,7 +171,7 @@ class SVG:
             segments = [LineString([exterior[i], exterior[i + 1]]).length
                         for i in range(len(exterior) - 1)]
 
-            search_space = max(segments) + 1e-1
+            search_space = max(segments) + self.path_inflation + 1e-1
             passage_cost = (2 * self.path_inflation - line_segment.length) * masses[light_id]
 
             passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost, search_space)))

@@ -31,7 +31,7 @@ objects:
         fixed: True
     box:
         type: "box"
-        size: [0.750, 0.750, 0.750]
+        size: [0.600, 0.600, 0.600]
         friction: 0.300
         mass: 5.00
         color: [0.9, 0.2, 0.0]

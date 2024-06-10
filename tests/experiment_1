@@ -41,7 +41,7 @@ class Experiment1:
         config = rospy.get_param('~config')
         layout = 'experiment_1'
 
-        gym_world = SimulateWorld.build(hydra.compose(config), layout, False)
+        gym_world = SimulateWorld.build(hydra.compose(config), layout, True)
         scheduler = Scheduler.create_scheduler(layout)
 
         return cls(gym_world, scheduler, layout, config)
