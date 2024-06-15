@@ -125,11 +125,14 @@ class SimulateWorld:
                 additions.append(obstacle)
         return additions
 
-    def random_additions(self):
-        additions = self.create_walls()
+    def random_additions(self, build_walls=True, additions=None, range_x=None, range_y=None):
+        additions = additions if additions is not None else []
 
-        range_x = self.params['range_x']
-        range_y = self.params['range_y']
+        if build_walls:
+            additions += self.create_walls()
+
+        range_x = self.params['range_x'] if range_x is None else range_x
+        range_y = self.params['range_y'] if range_y is None else range_y
 
         area = (range_x[1] - range_x[0]) * (range_y[1] - range_y[0])
 
@@ -196,19 +199,16 @@ class SimulateWorld:
             obstacle["init_ori"] = init_ori
             obstacle["init_pos"] = init_pos
 
-            size_x, size_y, size_z = obstacle["size"]
+            size_x, size_y, _ = obstacle["size"]
             obstacle["size"][0] = size_x + \
                 np.random.uniform(-adjustable_size_noise *
                                   size_x, adjustable_size_noise * size_x)
             obstacle["size"][1] = size_y + \
                 np.random.uniform(-adjustable_size_noise *
                                   size_y, adjustable_size_noise * size_y)
-            obstacle["size"][2] = size_z + \
-                np.random.uniform(-adjustable_size_noise *
-                                  size_z, adjustable_size_noise * size_z)
 
             if not self.is_obstacle_overlapping(init_pos, obstacle["size"], init_ori,
-                                                additions, excluded_poses, margin=1e-3):
+                                                additions, excluded_poses):
                 current_adjustable_area += (obstacle["size"]
                                             [0] * obstacle["size"][1])
                 additions.append(obstacle)
