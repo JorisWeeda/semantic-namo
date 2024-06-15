@@ -12,12 +12,13 @@ camera:
     tar: [0., 0., 0.]
 
 scheduler:
-    mass_threshold: 15.
-    path_inflation: 0.3
+    mass_threshold: 30. # kg
+    path_inflation: 0.1 # meters
+    spline_interval: .5 #
+    spline_step: 3
 
 controller:
-    max_f_contact: 1000.
-    pos_tolerance: 0.3  # meters
+    pos_tolerance: 0.1  # meters
     yaw_tolerance: 0.1  # radian
     vel_tolerance: 0.1
  
@@ -32,7 +33,7 @@ objects:
     box:
         type: "box"
         size: [0.600, 0.600, 0.600]
-        friction: 0.300
+        friction: 0.30030
         mass: 5.00
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
@@ -99,12 +100,12 @@ objects:
 
     adjustable:
         type: "box"
-        size: [0.400, 0.400, 0.700]
-        friction: 0.500
-        mass: 10.00
+        size: [0.6, 0.6, 0.6]
+        friction: 1.00
+        mass: 20.00
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
         noise_percentage_friction: 0.
-        noise_percentage_mass: 0.9
+        noise_percentage_mass: 0.8
         fixed: False
         collision: True

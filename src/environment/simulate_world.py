@@ -39,7 +39,6 @@ class SimulateWorld:
         self.pos_tolerance = params['controller']['pos_tolerance']
         self.yaw_tolerance = params['controller']['yaw_tolerance']
         self.vel_tolerance = params['controller']['vel_tolerance']
-        self.max_f_contact = params['controller']['max_f_contact']
 
         self._goal = None
         self._mode = None
@@ -92,12 +91,11 @@ class SimulateWorld:
         x, y, yaw = init_state[0], init_state[1], init_state[2] * (math.pi / 180.0)
 
         self.simulation.set_actor_dof_state(torch.tensor([x, 0., y, 0., yaw, 0.], device=self.device))
-        self.update_objective((x, y, yaw), (0., 0.))
+        self.update_objective(np.array([[x, y]]))
 
         cam_pos = self.params["camera"]["pos"]
         cam_tar = self.params["camera"]["tar"]
-        self.set_viewer(self.simulation._gym,
-                        self.simulation.viewer, cam_pos, cam_tar)
+        self.set_viewer(self.simulation._gym, self.simulation.viewer, cam_pos, cam_tar)
 
     def create_additions(self):
         additions = []
@@ -109,8 +107,7 @@ class SimulateWorld:
 
                 obstacle = {**obs_args, **wall[obs_type]}
 
-                rot = Rotation.from_euler(
-                    'xyz', obstacle["init_ori"], degrees=True).as_quat()
+                rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
                 obstacle["init_ori"] = list(rot)
 
                 additions.append(obstacle)
@@ -122,8 +119,7 @@ class SimulateWorld:
 
                 obstacle = {**obs_args, **obstacle[obs_type]}
 
-                rot = Rotation.from_euler(
-                    'xyz', obstacle["init_ori"], degrees=True).as_quat()
+                rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
                 obstacle["init_ori"] = list(rot)
 
                 additions.append(obstacle)
@@ -234,11 +230,11 @@ class SimulateWorld:
         excluded_poses = ({'init_pos': init_pose, 'init_ori': [0., 0., 0.], 'size': [2*inflation, 2*inflation]},
                           {'init_pos': goal_pose, 'init_ori': [0., 0., 0.], 'size': [2*inflation, 2*inflation]})
 
-        x_step = 2 * inflation + obstacle_size[0]
-        y_step = 2 * inflation + obstacle_size[1]
+        x_step = 2 * obstacle_size[0]
+        y_step = 2 * inflation + 4 * obstacle_size[1]
 
-        start_x, end_x = range_x[0] + obstacle_size[0], range_x[1]
-        start_y, end_y = range_y[0] + y_step, range_y[1] - y_step / 2
+        start_x, end_x = range_x[0] + inflation + obstacle_size[0], range_x[1]
+        start_y, end_y = range_y[0] + 2, range_y[1] - 2
 
         for x in np.arange(start_x, end_x, x_step):
             for y in np.arange(start_y, end_y, y_step):
@@ -299,33 +295,20 @@ class SimulateWorld:
 
         self.check_goal_reached()
         if self.is_goal_reached:
-            rospy.loginfo_throttle(
-                1, 'The goal is reached, no action applied to the robot')
+            rospy.loginfo_throttle(1, 'The goal is reached, no action applied to the robot')
 
         self.simulation.apply_robot_cmd(action)
         self.simulation.step()
 
         return action
 
-    def update_objective(self, goal, mode=(0, 0)):
-        self._goal = goal
-        self._mode = mode
+    def update_objective(self, waypoints):
+        torch_waypoints = torch.from_numpy(waypoints).to(self.device)
+        bytes_waypoints = self.torch_to_bytes(torch_waypoints)
 
-        tensor_init = self.get_robot_dofs()
-        tensor_goal = torch.tensor(
-            [goal[0], goal[1], 0.], device=self.device)
-        tensor_mode = torch.tensor(
-            [mode[0], mode[1]], device=self.device)
+        self._goal = waypoints[0, :]
 
-        rospy.loginfo(f"New starting state: {tensor_init}")
-        rospy.loginfo(f"New objective goal: {tensor_goal}")
-        rospy.loginfo(f"New objective mode: {tensor_mode}")
-
-        bytes_init = self.torch_to_bytes(tensor_init)
-        bytes_goal = self.torch_to_bytes(tensor_goal)
-        bytes_mode = self.torch_to_bytes(tensor_mode)
-
-        self.controller.update_objective(bytes_init, bytes_goal, bytes_mode)
+        self.controller.update_objective(bytes_waypoints)
 
     def get_robot_dofs(self):
         return self.simulation.dof_state[0].tolist()
@@ -334,13 +317,10 @@ class SimulateWorld:
         return self.simulation.env_cfg, self.simulation.root_state[0, :, :].cpu().numpy()
 
     def get_net_forces(self):
-        net_contact_forces = torch.sum(torch.abs(torch.cat((self.simulation.net_contact_force[:, 0].unsqueeze(
-            1), self.simulation.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
-        number_of_bodies = int(net_contact_forces.size(
-            dim=0) / self.simulation.num_envs)
+        net_contact_forces = torch.sum(torch.abs(torch.cat((self.simulation.net_contact_force[:, 0].unsqueeze(1), self.simulation.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
+        number_of_bodies = int(net_contact_forces.size(dim=0) / self.simulation.num_envs)
 
-        reshaped_contact_forces = net_contact_forces.reshape(
-            [self.simulation.num_envs, number_of_bodies])
+        reshaped_contact_forces = net_contact_forces.reshape([self.simulation.num_envs, number_of_bodies])
         return torch.sum(reshaped_contact_forces, dim=1)[0].tolist()
 
     def get_elapsed_time(self):
@@ -363,9 +343,10 @@ class SimulateWorld:
         rob_pos = torch.tensor([rob_dof[0], rob_dof[2]], device=self.device)
         xy_goal = torch.tensor(self._goal[:2], device=self.device)
 
-        self.is_goal_reached = False
         if torch.linalg.norm(xy_goal - rob_pos) < self.pos_tolerance:
             self.is_goal_reached = True
+        else:
+            self.is_goal_reached = False
 
     @staticmethod
     def set_viewer(gym, viewer, position, target):
