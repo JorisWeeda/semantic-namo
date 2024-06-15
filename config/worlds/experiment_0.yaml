@@ -1,0 +1,88 @@
+name: "Simple"
+description: "Navigation Among Movable Obstacles: Simulated Approach"
+
+range_x: [-8.0, 8.0]
+range_y: [-4.0, 4.0]
+
+goal: [6.0, -3.0]
+
+environment:
+    demarcation:
+        - wall:
+            name: "f-demarcation-wall"
+            size: [15.8, 0.2, 0.5]
+            init_pos: [0.0, 4, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - wall:
+            name: "b-demarcation-wall"
+            size: [15.8, 0.2, 0.5]
+            init_pos: [0.0, -4, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - wall:
+            name: "l-demarcation-wall"
+            size: [7.8, 0.2, 0.5]
+            init_pos: [-8.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+        - wall:
+            name: "r-demarcation-wall"
+            size: [7.8, 0.2, 0.5]
+            init_pos: [8.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+
+        - wall:
+            name: "middle-v-wall-1"
+            size: [5.8, 0.2, 0.5]
+            init_pos: [-4.0, 1.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+        - wall:
+            name: "middle-v-wall-2"
+            size: [5.8, 0.2, 0.5]
+            init_pos: [0.0, -1.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+        - wall:
+            name: "middle-h-wall-1"
+            size: [3.8, 0.2, 0.5]
+            init_pos: [2.0, 2.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - wall:
+            name: "middle-h-wall-2"
+            size: [1.8, 0.2, 0.5]
+            init_pos: [7.0, 2.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+
+        - wall:
+            name: "middle-h-wall-3"
+            size: [1.5, 0.2, 0.5]
+            init_pos: [-2.0, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+
+    obstacles:
+        - box:
+            name: "Box 1"
+            init_pos: [-4., -2.6, 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 2"
+            init_pos: [-4., -3.4, 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+
+        - box:
+            name: "Box 3"
+            init_pos: [-3.25, 0., 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 4"
+            init_pos: [-0.5, 0., 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+
+        - box:
+            name: "Box 5"
+            init_pos: [4.5, 2., 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 6"
+            init_pos: [4.5, 3.0, 0.1]
+            init_ori: [0.0, 0.0, 0.0]
+
+    robot:
+        init_state: [-6., 3., 0.0]
