@@ -230,10 +230,10 @@ class SimulateWorld:
         excluded_poses = ({'init_pos': init_pose, 'init_ori': [0., 0., 0.], 'size': [2*inflation, 2*inflation]},
                           {'init_pos': goal_pose, 'init_ori': [0., 0., 0.], 'size': [2*inflation, 2*inflation]})
 
-        x_step = 2 * obstacle_size[0]
+        x_step = obstacle_size[0] + 1.5 * inflation
         y_step = 2 * inflation + 4 * obstacle_size[1]
 
-        start_x, end_x = range_x[0] + inflation + obstacle_size[0], range_x[1]
+        start_x, end_x = range_x[0] + obstacle_size[0], range_x[1]
         start_y, end_y = range_y[0] + 2, range_y[1] - 2
 
         for x in np.arange(start_x, end_x, x_step):
