@@ -80,8 +80,8 @@ class Experiment0:
         configurations["runner_force"].append(run_svg_force)
         configurations["runner_time"].append(run_svg_time)
 
-        print(configurations)
         benchmark.show_snapshot_environment(svg_path)
+        self.show_snapshot_environment(svg_path)
 
     def reset_robot(self):
         robot_state = self.gym_world.params["environment"]["robot"]["init_state"]

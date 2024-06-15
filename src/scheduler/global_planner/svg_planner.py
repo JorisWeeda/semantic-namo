@@ -22,8 +22,7 @@ class SVG:
 
     def graph(self, q_init, q_goal, actors):
         actor_polygons, _ = self.generate_polygons(actors)
-        avoid_obstacle, _ = self.generate_polygons(
-            actors, self.path_inflation - 1e-3)
+        avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - 1e-2)
 
         graph = nx.Graph()
         self.add_node_to_graph(graph, (*q_init, 0.), avoid_obstacle.values())

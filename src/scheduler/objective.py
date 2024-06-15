@@ -12,11 +12,11 @@ class Objective:
 
         self.device = device
 
-        self.w_waypoint = 5.0
-        self.w_horizon = 1.0
+        self.w_waypoint = 10.0
+        self.w_horizon = 5.0
         self.w_rotation = 10.0
-        self.w_contact = 1.0
-        self.w_control = torch.diag(torch.tensor([2., 2., 1.], device=device))
+        self.w_contact = 5.0
+        self.w_control = torch.diag(torch.tensor([1., 1., 1.], device=device))
 
     def reset(self):
         pass
@@ -49,7 +49,7 @@ class Objective:
         return distance_norm_per_env
 
     def _cost_targets_ahead(self, sim):
-        look_ahead_norm_per_env = torch.zeros((sim.num_envs))
+        look_ahead_norm_per_env = torch.zeros((sim.num_envs), device=self.device)
 
         if self.waypoints.shape[0] > 1:
             sampled_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), 1)
