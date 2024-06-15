@@ -27,6 +27,7 @@ class Experiment1:
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/experiment_1/'
     
     MAX_EXEC_DURATION = 150
+    ROOM_ITERATONS = 1
    
     DIMENSION_ROOM_X = 2.
     DIMENSION_ROOM_Y = 6.
@@ -71,20 +72,22 @@ class Experiment1:
 
     def run_experiment_1(self):
         rospy.loginfo(f'Running experiment 1')
-        configurations = {'ID': [],
-                          'experiment': [],
-                          'room_area': [],
-                          'planner': [],
-                          'planner_result': [],
-                          'planner_time': [],
-                          'planner_cost': [],
-                          'runner': [],
-                          'runner_result': [],
-                          'runner_force': [],
-                          'runner_time': []
-                          }
 
-        configurations = self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
+        for _ in range(self.ROOM_ITERATONS):
+            configurations = {'ID': [],
+                            'experiment': [],
+                            'room_area': [],
+                            'planner': [],
+                            'planner_result': [],
+                            'planner_time': [],
+                            'planner_cost': [],
+                            'runner': [],
+                            'runner_result': [],
+                            'runner_force': [],
+                            'runner_time': []
+                            }
+
+            self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
         rospy.loginfo(f'Finished experiment 1')
 
     def apply_sequence(self, x, y, configurations):
@@ -256,15 +259,14 @@ class Experiment1:
         state_ten = torch.zeros(len(actors), 13)
         for i, actor in enumerate(actors):
             state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
-            state_ten[i, 3:7] = torch.tensor(
-                actor.init_ori, device=self.device)
+            state_ten[i, 3:7] = torch.tensor(actor.init_ori, device=self.device)
 
-            actor_mass_noise = np.random.uniform(
-                -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+            actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
             actor.mass = actor.mass + actor_mass_noise
 
-            print(f'{i}: ', actor.name, actor.mass,
-                  actor.init_pos, actor.init_ori, actor.size)
+            additions[i]['mass'] = actor.mass
+ 
+            print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
 
         self.reset_robot()
 
@@ -281,7 +283,7 @@ class Experiment1:
         return result, graph, exec_time, path, cost
 
     def run_trajectory(self, path_is_ready, additions):
-        self.gym_world.configure(additions)
+        self.gym_world.configure(additions=additions, apply_mass_noise=False)
 
         exec_net_forces = 0.0
         exec_run_result = False
@@ -304,6 +306,7 @@ class Experiment1:
             if time.time() - exec_start_time > self.MAX_EXEC_DURATION:
                 rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
                 break
+
         exec_time = time.time() - exec_start_time
         return exec_run_result, exec_time, exec_net_forces
 
