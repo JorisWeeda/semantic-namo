@@ -125,8 +125,7 @@ class Dashboard:
             self.ax_2.plot(edge[:, 0], edge[:, 1], color='blue', linewidth=0.1)
 
         if shortest_path is not None:
-            self.ax_2.plot(
-                shortest_path[:, 0], shortest_path[:, 1], color='green', linewidth=3)
+            self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], 'g-o', linewidth=2)
 
         self.ax_2.set_title('Global path planning')
         self.ax_2.autoscale(enable=True)
