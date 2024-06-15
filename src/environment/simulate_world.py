@@ -77,15 +77,15 @@ class SimulateWorld:
 
         return cls(params, config, simulation, controller, config["mppi"].device)
 
-    def configure(self, additions=None):
+    def configure(self, additions=None, apply_mass_noise=True):
         if additions is None:
             if self.params["random"]:
                 additions = self.random_additions()
             else:
                 additions = self.create_additions()
 
-        self.simulation.add_to_envs(additions)
-        self.controller.add_to_env(additions)
+        self.simulation.add_to_envs(additions, apply_mass_noise)
+        self.controller.add_to_env(additions, apply_mass_noise)
 
         init_state = self.params["environment"]["robot"]["init_state"]
         x, y, yaw = init_state[0], init_state[1], init_state[2] * (math.pi / 180.0)
