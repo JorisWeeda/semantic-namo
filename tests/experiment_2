@@ -33,7 +33,7 @@ class Experiment2:
     DIMENSION_ROOM_X = 2.
     DIMENSION_ROOM_Y = 6.
 
-    ADJUSTABLE_PERCENTAGE = 0.15
+    ADJUSTABLE_PERCENTAGE = 0.20
     STATIONARY_PERCENTAGE = 0.01
 
     USE_NVG = True
@@ -90,9 +90,6 @@ class Experiment2:
                             'runner_time': []
                             }
 
-            self.gym_world.params['adjustable_percentage'] = self.ADJUSTABLE_PERCENTAGE
-            self.gym_world.params['stationary_percentage'] = self.STATIONARY_PERCENTAGE
-
             self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
         rospy.loginfo(f'Finished experiment 2')
 
@@ -117,7 +114,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(1)
+            configurations["experiment"].append(2)
 
             configurations["planner"].append('nvg') 
             configurations["planner_result"].append(nvg_result)
@@ -144,7 +141,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(1)
+            configurations["experiment"].append(2)
 
             configurations["planner"].append('svg') 
             configurations["planner_result"].append(svg_result)
@@ -171,7 +168,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(1)
+            configurations["experiment"].append(2)
 
             configurations["planner"].append('prm') 
             configurations["planner_result"].append(prm_result)
@@ -198,7 +195,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(1)
+            configurations["experiment"].append(2)
 
             configurations["planner"].append('rrt') 
             configurations["planner_result"].append(rrt_result)
@@ -236,6 +233,9 @@ class Experiment2:
         self.gym_world.update_objective(np.array([[x, y]]))
 
     def initiate_world(self, x, y):
+        self.gym_world.params['adjustable_percentage'] = self.ADJUSTABLE_PERCENTAGE
+        self.gym_world.params['stationary_percentage'] = self.STATIONARY_PERCENTAGE
+
         self.gym_world.params['range_x'] = [-x, x]
         self.gym_world.params['range_y'] = [-y, y]
 
@@ -260,7 +260,9 @@ class Experiment2:
         self.gym_world.params["environment"]["robot"]["init_state"] = [0., - y + .5, 90]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
 
-        additions = self.gym_world.random_additions()
+        addition_range_y = [-y + 2, y - 2]
+        additions = self.gym_world.random_additions(range_y= addition_range_y)
+
         actors = [ActorWrapper(**addition) for addition in additions]
 
         room_area = (2 * x) * (2 * y)

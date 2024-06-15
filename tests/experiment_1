@@ -27,7 +27,7 @@ class Experiment1:
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/experiment_1/'
     
     MAX_EXEC_DURATION = 150
-    ROOM_ITERATONS = 1
+    ROOM_ITERATONS = 20
    
     DIMENSION_ROOM_X = 2.
     DIMENSION_ROOM_Y = 6.
@@ -38,7 +38,7 @@ class Experiment1:
     USE_RRT = True
 
     RUN_SIM = True
-    SAVE_IMG = True
+    SAVE_IMG = False
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world
@@ -59,7 +59,7 @@ class Experiment1:
         config = rospy.get_param('~config')
         layout = rospy.get_param('~layout')
 
-        gym_world = SimulateWorld.create(hydra.compose(config), layout, True)
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
         scheduler = Scheduler.create_scheduler(layout)
 
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
