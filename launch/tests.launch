@@ -4,11 +4,12 @@
     <arg name="config" default="config_dingo_push" />
     <arg name="layout" default="random" />
     
-    <arg name="use_helper_plotter" default="False" />
-
+    <arg name="do_experiment_0" default="False" />
     <arg name="do_experiment_1" default="False" />
     <arg name="do_experiment_2" default="False" />
     <arg name="do_experiment_3" default="False" />
+
+    <arg name="use_helper_plotter" default="False" />
 
     <node name="controller" pkg="semantic_namo" type="controller" output="screen" launch-prefix="$(arg venv)" >
         <param name="config" value="$(arg config)" />
@@ -17,6 +18,13 @@
 
     <group if="$(eval use_helper_plotter)">
         <node name="helper_plotter" pkg="semantic_namo" type="helper_plotter" output="screen" required="true" launch-prefix="$(arg venv)">
+            <param name="config" value="$(arg config)" />
+            <param name="layout" value="$(arg layout)" />
+        </node>
+    </group>
+
+    <group if="$(eval do_experiment_0)">
+        <node name="experiment_0" pkg="semantic_namo" type="experiment_0" output="screen" required="true" launch-prefix="$(arg venv)">
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
         </node>

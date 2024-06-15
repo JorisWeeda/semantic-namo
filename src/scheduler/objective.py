@@ -12,28 +12,31 @@ class Objective:
 
         self.device = device
 
-        self.w_control = torch.diag(torch.tensor([1., 1., 1.], device=device))
-        self.w_dis = 2.0
-        self.w_rot = 2.0
-        self.w_for = 1.0
+        self.w_waypoint = 5.0
+        self.w_horizon = 1.0
+        self.w_rotation = 10.0
+        self.w_contact = 1.0
+        self.w_control = torch.diag(torch.tensor([2., 2., 1.], device=device))
 
     def reset(self):
         pass
 
     def compute_cost(self, sim, u):
         cost_next_waypoint = self._cost_next_waypoint(sim)
+        cost_distance = self.w_waypoint * cost_next_waypoint
+
         cost_targets_ahead = self._cost_targets_ahead(sim)
-        cost_distance = self.w_dis * cost_next_waypoint.add(cost_targets_ahead)
+        cost_horizon = self.w_horizon * cost_targets_ahead
 
         cost_rotation_to_goal = self._rotation_to_goal(sim)
-        cost_rotation = self.w_rot * cost_rotation_to_goal
+        cost_rotation = self.w_rotation * cost_rotation_to_goal
 
         cost_of_contact_force = self._contact_forces_to_goal(sim)
-        cost_contacts = self.w_for * cost_of_contact_force
+        cost_contacts = self.w_contact * cost_of_contact_force
 
         cost_controls = self._cost_control_vec(u)
 
-        cost = cost_distance + cost_rotation + cost_contacts + cost_controls
+        cost = cost_distance + cost_horizon + cost_rotation + cost_contacts + cost_controls
         return cost
 
     def _cost_next_waypoint(self, sim):
@@ -58,7 +61,7 @@ class Objective:
         return look_ahead_norm_per_env
 
     def _rotation_to_goal(self, sim):
-        goal = self.waypoints[0, :]
+        goal = self.waypoints[-1, :]
 
         tar_yaw = torch.atan2(goal[1] - sim.dof_state[:, 2], goal[0] - sim.dof_state[:, 0])
         rob_yaw = quaternion_to_yaw(sim.rigid_body_state[:, 3, 3:7], self.device)

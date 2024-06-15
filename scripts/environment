@@ -67,6 +67,9 @@ if __name__ == "__main__":
 
         monitor.step_monitoring()
 
+        if world.is_goal_reached and scheduler.is_finished():
+            break
+
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.cpu().numpy())
 

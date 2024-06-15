@@ -14,7 +14,7 @@ from scheduler.global_planner import NVG, SVG, PRM, RRT
 class Scheduler:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
-
+    
     def __init__(self, robot_goal_pos, spline_interval, spline_step, nvg_planner, svg_planner, prm_planner, rrt_planner):
         self.robot_goal_pos = robot_goal_pos
         
@@ -27,7 +27,7 @@ class Scheduler:
         self.rrt_planner = rrt_planner
 
         self.waypoints = None
-        self.next_waypoints = None
+        self.new_index = None
 
     @classmethod
     def create_scheduler(cls, layout):
@@ -52,7 +52,6 @@ class Scheduler:
         mass_threshold = params['scheduler']['mass_threshold']
         path_inflation = params['scheduler']['path_inflation']
         
-
         nvg_planner = NVG(range_x, range_y, mass_threshold, path_inflation)
         svg_planner = SVG(range_x, range_y, mass_threshold, path_inflation)
         prm_planner = PRM(range_x, range_y, mass_threshold, path_inflation)
@@ -112,24 +111,25 @@ class Scheduler:
         waypoint_index = min(np.argmin(distances) + 1, len(self.waypoints) - 1)
         horizon_index = min(waypoint_index + self.spline_step, len(self.waypoints))
 
+        self.new_index = waypoint_index 
         return self.waypoints[waypoint_index: horizon_index, :]
 
     def is_finished(self):
-        if self.next_waypoints is not None and self.next_waypoints >= len(self.waypoints):
+        if  self.new_index is not None and  self.new_index >= len(self.waypoints) -1:
             self.waypoints, self.next_waypoints = None, None
             return True
 
         return False
 
     @staticmethod
-    def apply_parametric_spline(waypoints, interval):
+    def apply_parametric_spline(waypoints, interval, order=2):
         length = Scheduler.calculate_total_length(waypoints)
         n = int(length / interval)
 
         x, y = waypoints[:, 0], waypoints[:, 1]
         m = len(x)
 
-        k = min(3, m - 1)
+        k = min(order, m - 1)
         if k < 1:
             raise ValueError("Not enough waypoints to form a spline.")
 
