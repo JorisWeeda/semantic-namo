@@ -64,8 +64,9 @@ class Experiment0:
         name = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
         configurations["ID"] = f"{name}"
 
-        svg_result, _, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
-        self.show_snapshot_environment(svg_path)
+        svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+        self.show_snapshot_environment(None, svg_graph)
+        self.show_snapshot_environment(svg_path, None)
 
         configurations["planner"].append('svg') 
         configurations["planner_result"].append(svg_result)
@@ -126,7 +127,7 @@ class Experiment0:
         exec_time = time.time() - exec_start_time
         return exec_run_result, exec_time, exec_net_forces
 
-    def show_snapshot_environment(self, path=None):
+    def show_snapshot_environment(self, path=None, graph=None):
         actors = self.gym_world.get_actor_states()
         robot_dof = self.gym_world.get_robot_dofs()
 
@@ -153,12 +154,16 @@ class Experiment0:
             polygon = shapely.Polygon(corners)
             polygon = rotate(polygon, obs_rot, use_radians=True)
 
-            patch_polygon = Polygon(
-                polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / max_mass))
+            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / max_mass))
             ax.add_patch(patch_polygon)
 
-        ax.plot(q_init[0], q_init[1], color='green', marker='o', markersize=5, label='Start Node')
-        ax.plot(q_goal[0], q_goal[1], color='red', marker='o', markersize=5, label='Goal Node')
+        ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=70, zorder=2, label='Start')
+        ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=80, zorder=2, label='Goal')
+
+        if graph is not None:
+            edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v in graph.edges])
+            for edge in edges:
+                ax.plot(edge[:, 0], edge[:, 1], color='green', linewidth=1.0)
 
         if path is not None:
             path = np.array(path)

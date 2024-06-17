@@ -1,133 +1,198 @@
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
+import matplotlib.pyplot as plt
+
+def calculate_success_percentages(data, result_column):
+    success_counts = data.groupby(['experiment', 'planner', result_column]).size().unstack(fill_value=0).reset_index()
+    success_counts['total'] = success_counts[True] + success_counts[False]
+    success_counts[f'{result_column}_success_percentage'] = (success_counts[True] / success_counts['total']) * 100
+    return success_counts[['experiment', 'planner', f'{result_column}_success_percentage']]
+
+def plot_planner_results(data, unique_planners, palette=None):
+    planner_success_percentages = calculate_success_percentages(data, 'planner_result')
+
+    if palette is None:
+        palette = sns.color_palette("Set1", n_colors=len(unique_planners))
+    palette_dict = {planner: color for planner, color in zip(unique_planners, palette)}
+
+    plt.figure(figsize=(16, 8))
+    sns.barplot(data=planner_success_percentages, x='experiment', y='planner_result_success_percentage', hue='planner',
+                palette=palette_dict, dodge=True, errorbar=None, hue_order=unique_planners)
+
+    plt.xlabel('Experiment', fontsize=16)
+    plt.ylabel('Planner Success Percentage (%)', fontsize=16)
+    plt.title('Planner Success Percentages by Experiment', fontsize=18)
+    plt.legend(title='Planner', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14, title_fontsize=14)
+    plt.xticks(rotation=0, ha='center', fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.ylim(0, 110)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    ax = plt.gca()
+    for p in ax.patches:
+        height = p.get_height()
+        if height > 0:
+            ax.annotate(f'{height:.1f}%', 
+                        (p.get_x() + p.get_width() / 2., height), 
+                        ha='center', va='center', 
+                        xytext=(0, 9), 
+                        textcoords='offset points', fontsize=14, color='black')
+    plt.show()
+
+def plot_runner_results(data, unique_planners, palette=None):
+    runner_success_percentages = calculate_success_percentages(data, 'runner_result')
+
+    if palette is None:
+        palette = sns.color_palette("Set1", n_colors=len(unique_planners))
+    palette_dict = {planner: color for planner, color in zip(unique_planners, palette)}
+
+    plt.figure(figsize=(16, 8))
+    sns.barplot(data=runner_success_percentages, x='experiment', y='runner_result_success_percentage', hue='planner',
+                palette=palette_dict, dodge=True, errorbar=None, hue_order=unique_planners)
+
+    plt.xlabel('Experiment', fontsize=16)
+    plt.ylabel('Runner Success Percentage (%)', fontsize=16)
+    plt.title('Runner Success Percentages by Experiment', fontsize=18)
+    plt.legend(title='Planner', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14, title_fontsize=14)
+    plt.xticks(rotation=0, ha='center', fontsize=14)
+    plt.yticks(fontsize=14)
+    plt.ylim(0, 110)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    ax = plt.gca()
+    for p in ax.patches:
+        height = p.get_height()
+        if height > 0:
+            ax.annotate(f'{height:.1f}%', 
+                        (p.get_x() + p.get_width() / 2., height), 
+                        ha='center', va='center', 
+                        xytext=(0, 9), 
+                        textcoords='offset points', fontsize=14, color='black')
+    plt.show()
 
 
-def plot_successful_results_room_sizes(data, room_sizes, methods, method_colors):
-    result_counts = pd.DataFrame(
-        columns=['room_area', 'nvg_result', 'svg_result', 'rrt_result'])
-    for room in room_sizes:
-        subset = data[data['room_area'] == room]
-        result_counts = pd.concat([result_counts, pd.DataFrame({
-            'room_area': [room],
-            'nvg_result': [subset['nvg_result'].sum()],
-            'svg_result': [subset['svg_result'].sum()],
-            'rrt_result': [subset['rrt_result'].sum()]
-        })], ignore_index=True)
+def filter_successful_runs(data, result_column):
+    return data[data[result_column] == True]
 
-    _, ax = plt.subplots(figsize=(12, 6))
-    bar_width = 0.2
-    bar_positions = np.arange(len(room_sizes)) * (len(methods) + 1) * bar_width
+def plot_planner_time(data, unique_planners, palette=None):
+    successful_data = filter_successful_runs(data, 'planner_result')
 
-    for i, method in enumerate(methods):
-        bar_values = result_counts[method].values
-        bar_offset = i * bar_width
-        ax.bar(bar_positions + bar_offset, bar_values, width=bar_width,
-               color=method_colors[i], label=method.split("_")[0].upper())
+    if palette is None:
+        palette = sns.color_palette("Set1", n_colors=len(unique_planners))
+    palette_dict = {planner: color for planner, color in zip(unique_planners, palette)}
 
-    ax.set_title('Number of Successful Results by Room Area and Planner',
-                 fontsize=18, fontweight='bold')
-    ax.set_xlabel('Room Area (m$^2$)', fontsize=14)
-    ax.set_ylabel('Number of Successful Runs', fontsize=14)
-    ax.set_xticks(bar_positions + bar_width)
-    ax.set_xticklabels([f'Room {room}' for room in room_sizes], fontsize=12)
+    plt.figure(figsize=(14, 8))
+    sns.barplot(
+        data=successful_data, 
+        x='experiment', 
+        y='planner_time', 
+        hue='planner', 
+        palette=palette_dict, 
+        errorbar='se',
+        capsize=.1,
+        hue_order=unique_planners
+    )
 
-    ax.tick_params(axis='y', labelsize=12)
-    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.xlabel('Experiment', fontsize=16, labelpad=10)
+    plt.ylabel('Planner Time (ms)', fontsize=16, labelpad=10)
+    plt.title('Planner Time by Experiment and Planner', fontsize=18, pad=15)
+    plt.xticks(rotation=0, ha='center', fontsize=14)
+    plt.yticks(fontsize=14)
 
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.legend(title='Planner', fontsize=12, title_fontsize=12, loc='upper left')
+    plt.legend(title='Planner', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14, title_fontsize=14)
+    plt.grid(True, which="both", ls="--", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+    plt.show()
 
 
-def plot_successful_time_boxplots_room_sizes(data, room_sizes, methods, method_times, method_colors):
-    _, axes = plt.subplots(1, len(room_sizes), figsize=(14, 8))
+def plot_runner_force(data, unique_planners, palette=None):
+    successful_data = filter_successful_runs(data, 'runner_result')
 
-    for idx, room in enumerate(room_sizes):
-        subset = data[data['room_area'] == room]
-        successful_subset = subset[(subset['nvg_result']) | (subset['svg_result']) | (subset['rrt_result'])]
-        time_data = []
-        for method_time, method in zip(method_times, methods):
-            method_data = successful_subset[successful_subset[method]][method_time]
-            time_data.append(method_data)
+    if palette is None:
+        palette = sns.color_palette("Set1", n_colors=len(unique_planners))
+    palette_dict = {planner: color for planner, color in zip(unique_planners, palette)}
 
-        sns.boxplot(data=time_data, palette=method_colors, showfliers=False, ax=axes[idx])
-        axes[idx].set_title(f'Room Area: {room}', fontsize=14)
+    plt.figure(figsize=(14, 8))
+    sns.barplot(
+        data=successful_data, 
+        x='experiment', 
+        y='runner_force', 
+        hue='planner', 
+        palette=palette_dict, 
+        errorbar='se',
+        capsize=.1,
+        hue_order=unique_planners
+    )
 
-        if idx == 0:
-            axes[idx].set_ylabel('Time (s)', fontsize=12)
+    plt.xlabel('Experiment', fontsize=16, labelpad=10)
+    plt.ylabel('Runner Force (N)', fontsize=16, labelpad=10)
+    plt.title('Runner Force by Experiment and Planner', fontsize=18, pad=15)
+    plt.xticks(rotation=0, ha='center', fontsize=14)
+    plt.yticks(fontsize=14)
 
-        axes[idx].set_xticks(np.arange(len(methods)))
-        axes[idx].set_xticklabels([method.split('_')[0].upper() for method in methods], fontsize=12)
-        axes[idx].tick_params(axis='y', labelsize=12)
-
-    plt.suptitle('Boxplot of Time for Successful Trials by Room Area and Method', fontsize=18, fontweight='bold')
-
-
-def plot_run_time_boxplots(data, room_sizes, methods, method_times, method_colors):
-    _, axes = plt.subplots(1, len(room_sizes), figsize=(14, 8), sharey=True)
-
-    for idx, room in enumerate(room_sizes):
-        subset = data[data['room_area'] == room]
-        time_data = []
-        for method_time, method in zip(method_times, methods):
-            successful_times = subset[subset[method]][method_time]
-            time_data.append(successful_times)
-
-        sns.boxplot(data=time_data, palette=method_colors, showfliers=False, ax=axes[idx])
-        axes[idx].set_title(f'Room Area: {room}', fontsize=14)
-        if idx == 0:
-            axes[idx].set_ylabel('Time (s)', fontsize=12)
-        axes[idx].set_xticks(np.arange(len(methods)))
-        axes[idx].set_xticklabels([method.split('_')[0].upper() for method in methods], fontsize=12)
-        axes[idx].tick_params(axis='y', labelsize=12)
-
-    plt.suptitle('Boxplot of Run Time for Successful Trials by Room Area and Method', fontsize=18, fontweight='bold')
+    plt.legend(title='Planner', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14, title_fontsize=14)
+    plt.grid(True, which="both", ls="--", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+    plt.show()
 
 
-def plot_run_force_boxplots(data, room_sizes, methods, method_forces, method_colors):
-    _, axes = plt.subplots(1, len(room_sizes), figsize=(14, 8), sharey=True)
+def plot_runner_time(data, unique_planners, palette=None):
+    successful_data = filter_successful_runs(data, 'runner_result')
 
-    for idx, room in enumerate(room_sizes):
-        subset = data[data['room_area'] == room]
-        force_data = []
-        for method_force, method in zip(method_forces, methods):
-            successful_forces = subset[subset[method]][method_force]
-            force_data.append(successful_forces)
+    if palette is None:
+        palette = sns.color_palette("Set1", n_colors=len(unique_planners))
+    palette_dict = {planner: color for planner, color in zip(unique_planners, palette)}
 
-        sns.boxplot(data=force_data, palette=method_colors, showfliers=False, ax=axes[idx])
-        axes[idx].set_title(f'Room Area: {room}', fontsize=14)
-        if idx == 0:
-            axes[idx].set_ylabel('Force (N)', fontsize=12)
-        axes[idx].set_xticks(np.arange(len(methods)))
-        axes[idx].set_xticklabels([method.split('_')[0].upper() for method in methods], fontsize=12)
-        axes[idx].tick_params(axis='y', labelsize=12)
+    plt.figure(figsize=(14, 8))
+    sns.barplot(
+        data=successful_data, 
+        x='experiment', 
+        y='runner_time', 
+        hue='planner', 
+        palette=palette_dict, 
+        errorbar='se',
+        capsize=.1,
+        hue_order=unique_planners
+    )
 
-    plt.suptitle('Boxplot of Run Force for Successful Trials by Room Area and Method', fontsize=18, fontweight='bold')
+    plt.xlabel('Experiment', fontsize=16, labelpad=10)
+    plt.ylabel('Runner Time (s)', fontsize=16, labelpad=10)
+    plt.title('Runner Time by Experiment and Planner', fontsize=18, pad=15)
+    plt.xticks(rotation=0, ha='center', fontsize=14)
+    plt.yticks(fontsize=14)
+
+    plt.legend(title='Planner', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=14, title_fontsize=14)
+    plt.grid(True, which="both", ls="--", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+
+
+def load_and_merge_data(file_1, file_2):
+    data_1 = pd.read_csv(file_1)
+    data_2 = pd.read_csv(file_2)
+    combined_data = pd.concat([data_1, data_2], ignore_index=True)
+    return combined_data
+
+
+def increase_brightness(color, factor):
+    return [min(1, c + factor) for c in color]
 
 
 if __name__ == "__main__":
-    csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/benchmark_global_planner/2024-06-08_16-24-21.csv'
-    data = pd.read_csv(csv_file)
+    experiment_1_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_1/experiment_1_2024-06-15.csv'
+    experiment_2_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_2/experiment_2_2024-06-15.csv'
 
-    methods = ['nvg_result', 'svg_result', 'rrt_result']
-    method_times = ['nvg_time', 'svg_time', 'rrt_time']
+    data = load_and_merge_data(experiment_1_csv_file, experiment_2_csv_file)
 
-    run_times = ['nvg_run_time', 'svg_run_time', 'rrt_run_time']
-    run_forces = ['nvg_run_force', 'svg_run_force', 'rrt_run_force']
+    unique_planners = ['VG', 'RRT', 'SVG']
 
-    method_colors = sns.color_palette("magma", len(methods))
+    palette_1 = sns.color_palette("Set1", 3)
+    palette_2 = sns.color_palette("Set2", 3)[::-1]
 
-    room_sizes = data['room_area'].unique()
-
-    plot_successful_results_room_sizes(data, room_sizes, methods, method_colors)
-    plot_successful_time_boxplots_room_sizes(data, room_sizes, methods, method_times, method_colors)
-
-    if all(data.get(key, None) for key in run_times):
-        plot_run_time_boxplots(data, room_sizes, methods, run_times, method_colors)
-
-    if all(data.get(key, None) for key in run_times):
-        plot_run_force_boxplots(data, room_sizes, methods, run_forces, method_colors)
-
-    plt.show()
+    plot_planner_results(data, unique_planners, palette=[increase_brightness(color, 0.0) for color in palette_1])
+    plot_runner_results(data, unique_planners, palette=[increase_brightness(color, 0.2) for color in palette_1])
+    plot_planner_time(data, unique_planners, palette=[increase_brightness(color, 0.0) for color in palette_2])
+    plot_runner_force(data, unique_planners, palette=[increase_brightness(color, 0.1) for color in palette_2])
+    plot_runner_time(data, unique_planners, palette=[increase_brightness(color, 0.2) for color in palette_2])

@@ -534,7 +534,7 @@ class Experiment1:
 
 if __name__ == "__main__":
     benchmark = Experiment1.create_benchmark_experiment_1()
-    benchmark.run_experiment_1()
+    benchmark.show_snapshot_environment()
     benchmark.gym_world.destroy()
 
     rospy.signal_shutdown("Benchmark experiment 1 completed. Shutting down ROS.")
