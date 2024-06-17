@@ -5,6 +5,7 @@ import networkx as nx
 from itertools import combinations
 
 from tf.transformations import euler_from_quaternion
+from scipy.spatial import KDTree
 from shapely import buffer, prepare
 from shapely.affinity import rotate
 from shapely.geometry import Point, LineString, Polygon
@@ -21,31 +22,27 @@ class SVG:
         self.path_inflation = path_inflation
 
     def graph(self, q_init, q_goal, actors):
-        actor_polygons, _ = self.generate_polygons(actors)
-        avoid_obstacle, _ = self.generate_polygons(
-            actors, self.path_inflation - 1e-3)
+        actor_polygons, masses = self.generate_polygons(actors)
+        avoid_obstacle, _ = self.generate_polygons(actors, self.path_inflation - 1e-2)
 
         graph = nx.Graph()
         self.add_node_to_graph(graph, (*q_init, 0.), avoid_obstacle.values())
 
-        actor_nodes = self.generate_nodes(actor_polygons.values())
+        actor_nodes = self.generate_nodes(actor_polygons, masses)
         for node in actor_nodes:
             self.add_node_to_graph(graph, node, avoid_obstacle.values())
 
         self.add_node_to_graph(graph, (*q_goal, 0.), avoid_obstacle.values())
-
         try:
             nx.shortest_path(graph, source=0, target=len(graph.nodes) - 1)
         except nx.NetworkXNoPath:
             rospy.loginfo("Avoidance is not possible, creating passage nodes.")
             pass
 
-        non_inflated_shapes, masses = self.generate_polygons(actors, 0.)
+        non_inflated_shapes, _ = self.generate_polygons(actors, 0.)
 
-        stationary_polygons = {name: polygon for name, polygon in non_inflated_shapes.items(
-        ) if masses[name] >= self.mass_threshold}
-        adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items(
-        ) if masses[name] < self.mass_threshold}
+        stationary_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] >= self.mass_threshold}
+        adjustable_polygons = {name: polygon for name, polygon in non_inflated_shapes.items() if masses[name] < self.mass_threshold}
 
         passage_nodes = self.generate_passages({**stationary_polygons, **adjustable_polygons}, masses)
         for node in passage_nodes:
@@ -113,30 +110,25 @@ class SVG:
 
         return shapes, masses
 
-    def generate_nodes(self, polygons, use_intersections=False):
+    def generate_nodes(self, shapes, masses, use_intersections=True):
         nodes = np.empty((0, 3), dtype='float')
 
-        if polygons:
-            corner_points = self.get_corner_points(
-                polygons, self.range_x, self.range_y)
+        if shapes.values():
+            corner_points = self.get_corner_points(shapes.values())
             if len(corner_points) != 0:
-                corner_points = np.hstack(
-                    (corner_points, np.zeros((corner_points.shape[0], 1))))
+                corner_points = np.hstack((corner_points, np.zeros((corner_points.shape[0], 1))))
                 nodes = np.vstack((nodes, corner_points))
 
             if use_intersections:
-                intersect_points = self.get_intersection_points(
-                    polygons, self.range_x, self.range_y)
+                intersect_points = self.get_intersection_points(shapes, masses, self.mass_threshold)
                 if len(intersect_points) != 0:
-                    intersect_points = np.hstack(
-                        (intersect_points, np.zeros((intersect_points.shape[0], 1))))
+                    intersect_points = np.hstack((intersect_points, np.zeros((intersect_points.shape[0], 1))))
                     nodes = np.vstack((nodes, intersect_points))
 
-            nodes = self.filter_nodes(nodes, polygons)
-
+            nodes = self.filter_nodes(nodes, shapes.values(), self.range_x, self.range_y)
         return nodes
 
-    def generate_passages(self, shapes, masses, margin=1e-3):
+    def generate_passages(self, shapes, masses, margin=1e-2):
         passages = np.empty((0, 4), dtype='float')
 
         obstacles_id_pairs = list(combinations(shapes.keys(), 2))
@@ -150,10 +142,8 @@ class SVG:
             if heavy_ob.distance(light_ob) > (2 * self.path_inflation):
                 continue
 
-            light_ob = buffer(light_ob, margin,
-                              cap_style='flat', join_style='mitre')
-            heavy_ob = buffer(heavy_ob, margin,
-                              cap_style='flat', join_style='mitre')
+            light_ob = buffer(light_ob, margin, cap_style='flat', join_style='mitre')
+            heavy_ob = buffer(heavy_ob, margin, cap_style='flat', join_style='mitre')
 
             prepare(light_ob)
             prepare(heavy_ob)
@@ -171,7 +161,7 @@ class SVG:
             segments = [LineString([exterior[i], exterior[i + 1]]).length
                         for i in range(len(exterior) - 1)]
 
-            search_space = max(segments) + self.path_inflation + 1e-1
+            search_space = max(segments) + 2 * self.path_inflation + 1e-1
             passage_cost = (2 * self.path_inflation - line_segment.length) * masses[light_id]
 
             passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost, search_space)))
@@ -179,44 +169,39 @@ class SVG:
         return passages
 
     @staticmethod
-    def get_corner_points(polygons, x_limit, y_limit):
+    def get_corner_points(polygons):
         corner_nodes = []
         for polygon in polygons:
             for corner in polygon.exterior.coords[:-1]:
-                if x_limit[0] <= corner[0] <= x_limit[1]:
-                    if y_limit[0] <= corner[1] <= y_limit[1]:
-                        corner_nodes.append(corner)
+                corner_nodes.append(corner)
 
         return np.array(corner_nodes)
 
     @staticmethod
-    def get_intersection_points(polygons, x_limit, y_limit):
+    def get_intersection_points(shapes, masses, mass_threshold):
         intersection_points = []
-        for i, polygon_i in enumerate(polygons):
-            for j, polygon_j in enumerate(polygons):
-                if i != j:
-                    intersection = polygon_i.boundary.intersection(
-                        polygon_j.boundary)
-                    if isinstance(intersection, Point):
-                        if x_limit[0] <= intersection.x <= x_limit[1] and y_limit[0] <= intersection.y <= y_limit[1]:
-                            intersection_points.append(
-                                [intersection.x, intersection.y])
 
-                    elif isinstance(intersection, LineString):
-                        for point in intersection.coords:
-                            if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append(
-                                    [point[0], point[1]])
+        obstacles_id_pairs = list(combinations(shapes.keys(), 2))
+        for id_1, id_2 in obstacles_id_pairs:
+            if masses[id_1] >= mass_threshold and masses[id_2] >= mass_threshold:
+                continue
+            
+            polygon_i, polygon_j = shapes[id_1], shapes[id_2]
+            intersection = polygon_i.boundary.intersection(polygon_j.boundary)
 
-                    elif isinstance(intersection, Polygon):
-                        for point in intersection.exterior.coords:
-                            if x_limit[0] <= point[0] <= x_limit[1] and y_limit[0] <= point[1] <= y_limit[1]:
-                                intersection_points.append(
-                                    [point[0], point[1]])
-                    else:
-                        for point in intersection.geoms:
-                            if x_limit[0] <= point.x <= x_limit[1] and y_limit[0] <= point.y <= y_limit[1]:
-                                intersection_points.append([point.x, point.y])
+            if isinstance(intersection, Point):
+                intersection_points.append([intersection.x, intersection.y])
+
+            elif isinstance(intersection, LineString):
+                for point in intersection.coords:
+                    intersection_points.append([point[0], point[1]])
+
+            elif isinstance(intersection, Polygon):
+                for point in intersection.exterior.coords:
+                    intersection_points.append([point[0], point[1]])
+            else:
+                for point in intersection.geoms:
+                    intersection_points.append([point.x, point.y])
 
         return np.array(intersection_points)
 
@@ -233,14 +218,18 @@ class SVG:
         return sorted_nodes
 
     @staticmethod
-    def filter_nodes(nodes, polygons, radius=0.1):
+    def filter_nodes(nodes, polygons, range_x, range_y, radius=0.1):
         filtered_nodes = []
 
         for node in nodes:
             point = Point(node)
+            if not range_x[0] <= point.x <= range_x[1]:
+                continue
 
-            is_within_polygon = any(polygon.contains(point)
-                                    for polygon in polygons)
+            if not range_y[0] <= point.y <= range_y[1]:
+                continue
+
+            is_within_polygon = any(polygon.contains(point) for polygon in polygons)
             if not is_within_polygon:
                 filtered_nodes.append(node)
             else:
@@ -250,8 +239,7 @@ class SVG:
                 if is_valid:
                     filtered_nodes.append(node)
 
-        filtered_nodes = np.array(filtered_nodes)
-        return np.unique(filtered_nodes, axis=0)
+        return filtered_nodes
 
     @staticmethod
     def search_distance_radius(polygon):

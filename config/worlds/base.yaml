@@ -13,7 +13,7 @@ camera:
 
 scheduler:
     mass_threshold: 30. # kg
-    path_inflation: 0.1 # meters
+    path_inflation: 0.3 # meters
     spline_interval: .5 #
     spline_step: 3
 
