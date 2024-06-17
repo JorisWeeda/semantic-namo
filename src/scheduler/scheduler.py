@@ -122,7 +122,7 @@ class Scheduler:
         return False
 
     @staticmethod
-    def apply_parametric_spline(waypoints, interval, order=2):
+    def apply_parametric_spline(waypoints, interval, order=1):
         length = Scheduler.calculate_total_length(waypoints)
         n = int(length / interval)
 
