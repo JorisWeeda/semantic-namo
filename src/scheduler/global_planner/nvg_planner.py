@@ -1,8 +1,6 @@
-from isaacgym import gymapi
 from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw
 
 import rospy
-import torch
 import numpy as np
 import networkx as nx
 
@@ -10,7 +8,8 @@ from itertools import combinations
 
 from shapely import buffer
 from shapely.affinity import rotate
-from shapely.geometry import Point, LineString, Polygon
+from shapely.geometry import Point, LineString, MultiPolygon, Polygon, box
+from shapely.ops import unary_union
 
 
 class NVG:
@@ -84,7 +83,7 @@ class NVG:
 
             polygon = Polygon(corners)
             polygon = rotate(polygon, obs_rot, use_radians=True)
-            polygon = buffer(polygon, margin, cap_style='flat', join_style='mitre')
+            polygon = buffer(polygon, margin, cap_style='flat', join_style='bevel')
 
             shapes[name] = polygon
             masses[name] = mass
@@ -105,15 +104,35 @@ class NVG:
         return nodes
 
     @staticmethod
-    def get_corner_points(polygons, x_limit, y_limit):
+    def get_corner_points(polygons, range_x, range_y):
+        free_polygons = NVG.get_free_areas(polygons, range_x, range_y)
+
         corner_nodes = []
-        for polygon in polygons:
+        for polygon in free_polygons:
             for corner in polygon.exterior.coords[:-1]:
-                if x_limit[0] <= corner[0] <= x_limit[1]:
-                    if y_limit[0] <= corner[1] <= y_limit[1]:
-                        corner_nodes.append(corner)
+                corner_nodes.append(corner)
 
         return np.array(corner_nodes)
+
+    @staticmethod
+    def get_free_areas(polygons, range_x, range_y):
+        occupied_area = unary_union(polygons)
+        
+        xmin, xmax = range_x
+        ymin, ymax = range_y
+        total_area = box(xmin, ymin, xmax, ymax)
+        
+        free_area = total_area.difference(occupied_area)
+        
+        if isinstance(free_area, Polygon):
+            free_areas = [free_area]
+        elif isinstance(free_area, MultiPolygon):
+            free_areas = list(free_area.geoms)
+        else:
+            free_areas = []
+        
+        return free_areas
+
 
     @staticmethod
     def find_closest_nodes(graph, coordinate):
