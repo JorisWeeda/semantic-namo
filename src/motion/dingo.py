@@ -10,8 +10,8 @@ class Dingo:
     MAX_VEL_LIN = 1.0
     MAX_VEL_ANG = 1.0
 
-    def __init__(self):
-        self._vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=1)
+    def __init__(self, robot_name):
+        self._vel_pub = rospy.Publisher(f'/{robot_name}/cmd_vel', Twist, queue_size=1)
 
     def move(self, vel_lin_x=0., vel_lin_y=0., vel_ang_z=0.):
         vel_msg = Twist()

@@ -6,11 +6,10 @@ import roslib
 import torch
 import yaml
 
-import numpy as np
 
 from functools import partial
 from tf.transformations import euler_from_quaternion
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped
 
 from isaacgym import gymapi
 
@@ -64,8 +63,8 @@ class Viewer:
         additions = self.create_additions()
         self.simulation.add_to_envs(additions)
 
-        rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self._cb_robot_state, queue_size=1,)
-        rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
+        rospy.Subscriber(f'/vicon/{robot_name}', PoseStamped, self._cb_robot_state, queue_size=1,)
+        rospy.wait_for_message(f'/vicon/{robot_name}', PoseStamped, timeout=10)
 
         cam_pos = self.params["camera"]["pos"]
         cam_tar = self.params["camera"]["tar"]
@@ -83,13 +82,11 @@ class Viewer:
                     obstacle = {**obs_args, **obstacle[obs_type]}
                     topic_name = obstacle.get("topic_name", None)
 
-                    empty_msg = PoseWithCovarianceStamped()
-                    pos, ori = empty_msg.pose.pose.position, empty_msg.pose.pose.orientation
+                    self.obstacle_states.append([*obstacle["init_pos"], 0., 0., 0., 1.])
 
-                    self.obstacle_states.append([pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w])
-
-                    rospy.Subscriber(f'/vicon/{topic_name}', PoseWithCovarianceStamped, partial(self._cb_obstacle_state, idx), queue_size=1)
-                    rospy.wait_for_message(f'/vicon/{topic_name}', PoseWithCovarianceStamped, timeout=10)
+                    if topic_name is not None:
+                        rospy.Subscriber(f'/vicon/{topic_name}', PoseStamped, partial(self._cb_obstacle_state, idx), queue_size=1)
+                        rospy.wait_for_message(f'/vicon/{topic_name}', PoseStamped, timeout=10)
 
                     additions.append(obstacle)
 
@@ -107,16 +104,16 @@ class Viewer:
         self.simulation.stop_sim()
 
     def _cb_robot_state(self, msg):
-        curr_pos = torch.Tensor([msg.pose.pose.position.x, msg.pose.pose.position.y], device=self.config["mppi"]["device"])
-        curr_ori = msg.pose.pose.orientation
+        curr_pos = torch.tensor([msg.pose.position.x, msg.pose.position.y])
+        curr_ori = msg.pose.orientation
 
         _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
-        self.robot_q = torch.Tensor([curr_pos[0], curr_pos[1], curr_yaw], device=self.config["mppi"]["device"])
+        self.robot_q = torch.tensor([curr_pos[0], curr_pos[1], curr_yaw])
 
         if self.robot_prev_msg is not None:
-            prev_pos = torch.Tensor([self.robot_prev_msg.pose.pose.position.x, self.robot_prev_msg.pose.pose.position.y], device=self.config["mppi"]["device"])
-            prev_ori = self.robot_prev_msg.pose.pose.orientation
+            prev_pos = torch.tensor([self.robot_prev_msg.pose.position.x, self.robot_prev_msg.pose.position.y])
+            prev_ori = self.robot_prev_msg.pose.orientation
 
             _, _, prev_yaw = euler_from_quaternion([prev_ori.x, prev_ori.y, prev_ori.z, prev_ori.w])
 
@@ -125,19 +122,12 @@ class Viewer:
             linear_velocity = (curr_pos - prev_pos) / delta_t
             angular_velocity = (curr_yaw - prev_yaw) / delta_t
 
-            cos_yaw = torch.cos(torch.Tensor([curr_yaw]), device=self.config["mppi"]["device"])
-            sin_yaw = torch.sin(torch.Tensor([curr_yaw]), device=self.config["mppi"]["device"])
-            self.robot_R = torch.Tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]], device=self.config["mppi"]["device"])
-
-            robot_xy_dot = torch.Tensor([[linear_velocity[0]], [linear_velocity[1]]], device=self.config["mppi"]["device"])
-            robot_xy_dot = torch.matmul(torch.transpose(self.robot_R, 0, 1), robot_xy_dot)
-            
-            self.robot_q_dot = torch.Tensor([*robot_xy_dot, angular_velocity], device=self.config["mppi"]["device"])
+            self.robot_q_dot = torch.tensor([linear_velocity[0], linear_velocity[1], angular_velocity])
             
         self.robot_prev_msg = msg
 
     def _cb_obstacle_state(self, idx, msg):
-        pos, ori = msg.pose.pose.position, msg.pose.pose.orientation
+        pos, ori = msg.pose.position, msg.pose.orientation
         self.obstacle_states[idx] = [pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w]
 
     @staticmethod

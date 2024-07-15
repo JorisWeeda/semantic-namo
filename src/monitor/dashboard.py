@@ -83,7 +83,7 @@ class Dashboard:
         self.fig_overview.canvas.draw()
         self.fig_overview.canvas.flush_events()
 
-    def update_planning(self, actors, shortest_path, graph):
+    def update_planning(self, actors, shortest_path=None, graph=None):
         if self.fig_planning is None:
             self.fig_planning, self.ax_2 = plt.subplots()
 
@@ -107,23 +107,20 @@ class Dashboard:
             polygon = shapely.Polygon(corners)
             polygon = rotate(polygon, obs_rot, use_radians=True)
 
-            patch_polygon = Polygon(
-                polygon.exterior.coords, closed=True, color=actor.color)
+            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=actor.color)
             self.ax_2.add_patch(patch_polygon)
 
-        nodes = np.array([(*data['pos'], data['cost'])
-                         for _, data in graph.nodes(data=True)])
-        edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos'])
-                         for u, v, _ in graph.edges(data=True)])
+        if graph is not None:
+            nodes = np.array([(*data['pos'], data['cost']) for _, data in graph.nodes(data=True)])
+            edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v, _ in graph.edges(data=True)])
 
-        node_scatter = self.ax_2.scatter(
-            nodes[:, 0], nodes[:, 1], c=nodes[:, 2], cmap=plt.cm.viridis)
-        cbar = plt.colorbar(node_scatter, ax=self.ax_2)
-        cbar.set_label('Cost')
+            node_scatter = self.ax_2.scatter(nodes[:, 0], nodes[:, 1], c=nodes[:, 2], cmap=plt.cm.viridis)
+            cbar = plt.colorbar(node_scatter, ax=self.ax_2)
+            cbar.set_label('Cost')
 
-        for edge in edges:
-            self.ax_2.plot(edge[:, 0], edge[:, 1], color='blue', linewidth=0.1)
-
+            for edge in edges:
+                self.ax_2.plot(edge[:, 0], edge[:, 1], color='blue', linewidth=0.1)
+        
         if shortest_path is not None:
             self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], 'g-o', linewidth=2)
 
@@ -136,7 +133,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(5)
+        plt.pause(2)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:
