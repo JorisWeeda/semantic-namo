@@ -2,8 +2,8 @@
     <arg name="venv" value="/home/joris/.cache/pypoetry/virtualenvs/namo-lBTKPx24-py3.8/bin/python" />
     
     <arg name="robot_name" default="dingo2" />
-    <arg name="obs_name_1" default="dynamic_object1" />
-    <arg name="obs_name_2" default="dynamic_object2" />
+    <arg name="obs_name_1" default="squarebox1" />
+    <arg name="obs_name_2" default="squarebox2" />
 
     <arg name="config" default="config_dingo_push" />
     <arg name="layout" default="empty" />
@@ -32,7 +32,7 @@
         <include file="$(find vicon_bridge)/launch/vicon.launch">
             <arg name="only_use_object_specific" default="true"/>
             <arg name="object_names" value="[$(arg robot_name), $(arg obs_name_1), $(arg obs_name_2)]"/>
-            <arg name="object_msg_types" value="[geometry_msgs/PoseWithCovarianceStamped, geometry_msgs/PoseWithCovarianceStamped, geometry_msgs/PoseWithCovarianceStamped]"/>
+            <arg name="object_msg_types" value="[geometry_msgs/PoseStamped, geometry_msgs/PoseStamped, geometry_msgs/PoseStamped]"/>
             <arg name="object_frame_ids" value="[map, map, map]"/>
             <arg name="object_publish_topics" value="[/vicon/$(arg robot_name), /vicon/$(arg obs_name_1), /vicon/$(arg obs_name_2)]"/>
             <arg name="object_frequency_divider" value="[1, 1, 1]"/>
