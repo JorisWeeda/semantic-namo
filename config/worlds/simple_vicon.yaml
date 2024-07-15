@@ -1,15 +1,17 @@
 name: "Simple Vicon"
 description: "Navigation Among Movable Obstacles: Vicon Approach"
 
+range_x: [-4.0, 4.0]
+range_y: [-4.0, 4.0]
+
+goal: [2., 0.]
+
 environment:
     obstacles:
-        - chair:
-            name: "Chair 1"
-            topic_name: "dynamic_object1"
-            init_pos: [40.0, 0.0, 0.0]
+        - stationary:
+            name: "Box 1"
+            init_pos: [0.0, 0.0, 0.2]
             init_ori: [0.0, 0.0, 0.0]
-        - chair:
-            name: "Chair 2"
-            topic_name: "dynamic_object2"
-            init_pos: [20.0, 0.0, 0.0]
-            init_ori: [0.0, 0.0, 0.0]
+
+    robot:
+        init_state: [-3.00, 0., 0.]
