@@ -9,6 +9,7 @@ import random
 import roslib
 import rospy
 import torch
+import time
 import yaml
 import zerorpc
 
@@ -39,11 +40,13 @@ class SimulateWorld:
         self.pos_tolerance = params['controller']['pos_tolerance']
         self.yaw_tolerance = params['controller']['yaw_tolerance']
         self.vel_tolerance = params['controller']['vel_tolerance']
+        self.replan_timing = params['controller']['replan_timing']
 
         self._goal = None
         self._mode = None
 
         self.is_goal_reached = False
+        self.replan_watchdog = None
 
     @classmethod
     def build(cls, config: ExampleConfig, layout: str, use_viewer: bool):
@@ -96,6 +99,8 @@ class SimulateWorld:
         cam_pos = self.params["camera"]["pos"]
         cam_tar = self.params["camera"]["tar"]
         self.set_viewer(self.simulation._gym, self.simulation.viewer, cam_pos, cam_tar)
+        
+        self.replan_watchdog = time.time()
 
     def create_additions(self):
         additions = []
@@ -300,40 +305,56 @@ class SimulateWorld:
         self.simulation.apply_robot_cmd(action)
         self.simulation.step()
 
-        return action
+        replan = False if self.is_goal_reached else self.evaluate_push_action(action)
+        return action, replan
+
+    def destroy(self):
+        self.simulation.stop_sim()
+
+    def evaluate_push_action(self, action):
+        robot_dof = self.get_robot_dofs()
+        q_rob = np.array([robot_dof[0], robot_dof[2], robot_dof[4]])
+        q_dot_rob = np.array([robot_dof[1], robot_dof[3], robot_dof[5]])
+
+        action_array = action.cpu().numpy()
+        if np.all(np.abs(q_dot_rob) < 1e-1):
+            rospy.logwarn_throttle(2, "Velocities are too close to zero, watchdog active")
+            pass
+        elif np.all(np.abs(q_dot_rob) > 0.5 * np.abs(action_array)):
+            rospy.logwarn_throttle(2, "Desired velocity cannot be reached, watchdog active")
+            pass
+        elif np.all(np.abs(q_rob) < 1e-1) and np.any(np.abs(q_dot_rob) > 1e-1):
+            rospy.logwarn_throttle(2, "Robot is slipping, watchdog active")
+            pass
+        else:
+            self.replan_watchdog = time.time()
+
+        if time.time() - self.replan_watchdog >= self.replan_timing:
+            rospy.logwarn_throttle(1, "Replanning is necessary, evaluate obstacle mass and update estimation.")
+            self.replan_watchdog = time.time()
+            self.update_estimation()
+            return True
+
+        return False
+
+    def update_estimation(self):
+        closest_index = self.get_closest_obstacle_index()
+        self.set_obstacle_mass(torch.tensor([closest_index]), torch.tensor([1000.0]))
 
     def update_objective(self, waypoints):
         torch_waypoints = torch.from_numpy(waypoints).to(self.device)
         bytes_waypoints = self.torch_to_bytes(torch_waypoints)
 
+        self.controller.update_objective(bytes_waypoints)
         self._goal = waypoints[0, :]
 
-        self.controller.update_objective(bytes_waypoints)
+    def is_finished(self):
+        if self.is_goal_reached:
+            rob_dof = self.get_robot_dofs()
+            if rob_dof[1] < self.vel_tolerance and rob_dof[2] < self.vel_tolerance:
+                return True
 
-    def get_robot_dofs(self):
-        return self.simulation.dof_state[0].tolist()
-
-    def get_actor_states(self):
-        return self.simulation.env_cfg, self.simulation.root_state[0, :, :].cpu().numpy()
-
-    def get_net_forces(self):
-        net_contact_forces = torch.sum(torch.abs(torch.cat((self.simulation.net_contact_force[:, 0].unsqueeze(1), self.simulation.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
-        number_of_bodies = int(net_contact_forces.size(dim=0) / self.simulation.num_envs)
-
-        reshaped_contact_forces = net_contact_forces.reshape([self.simulation.num_envs, number_of_bodies])
-        return torch.sum(reshaped_contact_forces, dim=1)[0].tolist()
-
-    def get_elapsed_time(self):
-        return self.simulation._gym.get_elapsed_time(self.simulation.sim)
-
-    def get_rollout_states(self):
-        return self.bytes_to_torch(self.controller.get_states(), self.device)
-
-    def get_rollout_best_state(self):
-        return self.bytes_to_torch(self.controller.get_n_best_samples(), self.device)
-
-    def destroy(self):
-        self.simulation.stop_sim()
+        return False
 
     def check_goal_reached(self):
         if self._goal is None:
@@ -347,6 +368,50 @@ class SimulateWorld:
             self.is_goal_reached = True
         else:
             self.is_goal_reached = False
+
+    def get_net_forces(self):
+        net_contact_forces = torch.sum(torch.abs(torch.cat((self.simulation.net_contact_force[:, 0].unsqueeze(1), self.simulation.net_contact_force[:, 1].unsqueeze(1)), 1)), 1)
+        number_of_bodies = int(net_contact_forces.size(dim=0) / self.simulation.num_envs)
+
+        reshaped_contact_forces = net_contact_forces.reshape([self.simulation.num_envs, number_of_bodies])
+        return torch.sum(reshaped_contact_forces, dim=1)[0].tolist()
+
+    def get_robot_dofs(self):
+        return self.simulation.dof_state[0].tolist()
+
+    def get_actor_states(self):
+        return self.simulation.env_cfg, self.simulation.root_state[0, :, :].cpu().numpy()
+
+    def get_elapsed_time(self):
+        return self.simulation._gym.get_elapsed_time(self.simulation.sim)
+
+    def get_rollout_states(self):
+        return self.bytes_to_torch(self.controller.get_states(), self.device)
+
+    def get_rollout_best_state(self):
+        return self.bytes_to_torch(self.controller.get_n_best_samples(), self.device)
+
+    def get_closest_obstacle_index(self):
+        _, actors_states = self.get_actor_states()
+        robot_dof = self.get_robot_dofs()
+
+        robot_x, robot_y = robot_dof[0], robot_dof[2]
+        actors_states = torch.from_numpy(actors_states)
+
+        obstacle_positions = actors_states[:, :2]
+        robot_position = torch.tensor([robot_x, robot_y])
+
+        distances = torch.norm(obstacle_positions - robot_position, dim=1)
+        
+        closest_obstacle_index = torch.argmin(distances).item()
+        return closest_obstacle_index
+
+    def set_obstacle_mass(self, obstacle_index, obstacle_mass):
+        self.simulation.set_actor_mass_by_actor_index(obstacle_index, obstacle_mass)
+
+        obstacle_index = self.torch_to_bytes(obstacle_index)
+        obstacle_mass = self.torch_to_bytes(obstacle_mass)
+        self.controller.set_actor_mass_by_actor_index(obstacle_index, obstacle_mass)
 
     @staticmethod
     def set_viewer(gym, viewer, position, target):
@@ -377,7 +442,7 @@ class SimulateWorld:
         yaw = np.rad2deg(SimulateWorld.quaternion_to_yaw(new_orientation))
         new_polygon = rotate(new_polygon, yaw)
         new_polygon = shapely.buffer(
-            new_polygon, margin, cap_style='flat', join_style='mitre')
+            new_polygon, margin, cap_style='flat', join_style='bevel')
 
         all_excluded_poses = list(obstacles) + list(excluded_poses)
         for excluded_pose in all_excluded_poses:
@@ -396,7 +461,7 @@ class SimulateWorld:
             obstacle = Polygon(corners)
             obstacle = rotate(obstacle, obs_yaw)
             obstacle = shapely.buffer(
-                obstacle, margin, cap_style='flat', join_style='mitre')
+                obstacle, margin, cap_style='flat', join_style='bevel')
 
             if new_polygon.intersects(obstacle):
                 return True
