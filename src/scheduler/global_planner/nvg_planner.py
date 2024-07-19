@@ -28,7 +28,7 @@ class NVG:
         graph = nx.Graph()
         self.add_node_to_graph(graph, (*q_init, 0.), avoid_obstacle.values())
 
-        actor_nodes = self.generate_nodes(actor_polygons.values())
+        actor_nodes = self.generate_nodes(list(actor_polygons.values()))
         for node in actor_nodes:
             self.add_node_to_graph(graph, node, avoid_obstacle.values())
 
