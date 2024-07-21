@@ -12,12 +12,13 @@ class Objective:
 
         self.device = device
         
+        self.alpha = .2
         self.dingo = 18     # number of bodies in Dingo
 
-        self.w_distance = 1.0
-        self.w_progress = 1.0
+        self.w_distance = 10.0
+        self.w_progress = 100.0
 
-        self.w_contact = 1.0
+        self.w_contact = 50.0
         self.w_control = torch.diag(torch.tensor([1., 1., 1.], device=device))
 
         self._cumulative_contact_force = None
@@ -27,19 +28,18 @@ class Objective:
 
     def compute_cost(self, sim, u, t, T):
         self._update_contact_force(sim)
-        cost = self._cost_control_vec(sim, u)
 
+        cost = 0.
+     
         if t == T - 1:
-            cost_closest_distance = self._distance_closest_waypoint(sim)
-            cost_distance = self.w_distance * cost_closest_distance
+            indices, cost_closest_distance = self._distance_closest_waypoint(sim)
+            cost += self.w_distance * cost_closest_distance
 
-            cost_progress_waypoints = self._progress_waypoints(sim)
-            cost_progress = self.w_progress * cost_progress_waypoints
+            cost_path_progress = self._relative_progress(indices)
+            cost += self.w_progress * cost_path_progress
 
-            cost_of_contact_force = self._contact_forces_to_goal()
-            cost_contacts = self.w_contact * cost_of_contact_force
-
-            cost += cost_distance + cost_progress + cost_contacts
+            cost_contact_force = self._contact_forces_to_goal()
+            cost += self.w_contact * cost_contact_force
 
         return cost
 
@@ -56,29 +56,31 @@ class Objective:
         return cost_control_vec_per_env
 
     def _distance_closest_waypoint(self, sim):
-        sampled_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), dim=1)  # Shape: (n, 2)
-        distances = torch.linalg.norm(self.waypoints.unsqueeze(0) - sampled_rob_pos.unsqueeze(1), dim=2)  # Shape: (n, m)
-    
-        closest_indices = distances.argmin(dim=1)
-    
-        next_indices = closest_indices + 1
-        next_indices = torch.where(next_indices < len(self.waypoints), next_indices, closest_indices)
-
-        distances_to_next_waypoint = distances[torch.arange(sim.num_envs), next_indices]
-        return distances_to_next_waypoint
-    
-    def _progress_waypoints(self, sim):
         sampled_rob_pos = torch.cat((sim.dof_state[:, 0].unsqueeze(1), sim.dof_state[:, 2].unsqueeze(1)), dim=1)
-    
         distances = torch.linalg.norm(self.waypoints.unsqueeze(0) - sampled_rob_pos.unsqueeze(1), dim=2)
-        closest_indices = distances.argmin(dim=1)
+
+        next_indices = distances.argmin(dim=1) + 1
+        next_indices = torch.clamp(next_indices, min=0, max=len(self.waypoints) - 1)
+
+        normalized_distances = distances[torch.arange(sim.num_envs), next_indices] / self.alpha
+        exp_scaled_distances = torch.exp(normalized_distances) - 1
+        return next_indices, exp_scaled_distances
     
-        normalized_progress = (len(self.waypoints) - closest_indices) / len(self.waypoints)
-        return normalized_progress
+    def _relative_progress(self, next_indices):
+        min_index = next_indices.min()
+        max_index = next_indices.max()
+
+        range_index = max_index - min_index
+        if range_index == 0:
+            return torch.zeros_like(next_indices, device=self.device)
+
+        normalized_difference = (next_indices - min_index) / range_index
+        reverse_normal_difference = 1.0 - normalized_difference
+        return reverse_normal_difference
 
     def _update_contact_force(self, sim):
         if self._cumulative_contact_force is None:
-            self._cumulative_contact_force =  torch.zeros((sim.num_envs))
+            self._cumulative_contact_force = torch.zeros((sim.num_envs), device=self.device)
 
         xy_contact_forces = torch.abs(torch.cat((sim.net_contact_force[:, 0].unsqueeze(1), sim.net_contact_force[:, 1].unsqueeze(1)), 1))
         xy_contact_forces = torch.sum(xy_contact_forces, dim=1)

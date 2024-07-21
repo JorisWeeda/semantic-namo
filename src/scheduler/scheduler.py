@@ -15,11 +15,10 @@ class Scheduler:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
     
-    def __init__(self, robot_goal_pos, spline_interval, spline_horizon, nvg_planner, svg_planner, prm_planner, rrt_planner):
+    def __init__(self, robot_goal_pos, spline_interval, nvg_planner, svg_planner, prm_planner, rrt_planner):
         self.robot_goal_pos = robot_goal_pos
         
         self.spline_interval = spline_interval
-        self.spline_horizon = spline_horizon
 
         self.nvg_planner = nvg_planner
         self.svg_planner = svg_planner
@@ -47,7 +46,6 @@ class Scheduler:
         robot_goal_pos = params['goal']
         
         spline_interval = params['scheduler']['spline_interval']
-        spline_horizon = params['scheduler']['spline_horizon']
 
         mass_threshold = params['scheduler']['mass_threshold']
         path_inflation = params['scheduler']['path_inflation']
@@ -57,7 +55,7 @@ class Scheduler:
         prm_planner = PRM(range_x, range_y, mass_threshold, path_inflation)
         rrt_planner = RRT(range_x, range_y, mass_threshold, path_inflation)
 
-        return cls(robot_goal_pos, spline_interval, spline_horizon, nvg_planner, svg_planner, prm_planner, rrt_planner)
+        return cls(robot_goal_pos, spline_interval, nvg_planner, svg_planner, prm_planner, rrt_planner)
 
     def generate_path(self, robot_dof, actors, mode='svg'):
         q_init = [robot_dof[0], robot_dof[2]]
@@ -101,28 +99,6 @@ class Scheduler:
 
         cost = sum(graph[u][v]['length'] for u, v in zip(shortest_path[:-1], shortest_path[1:]))
         return True, graph, self.waypoints, cost
-
-    def get_next_waypoints(self, robot_dof):
-        q_rob = np.array([robot_dof[0], robot_dof[2]])
-        if self.waypoints is None: 
-            return None
-
-        distances = np.linalg.norm(self.waypoints - q_rob, axis=1)
-        if len(distances) == 0:
-            return None
-
-        waypoint_index = min(np.argmin(distances) + 1, len(self.waypoints) - 1)
-        horizon_index = min(waypoint_index + self.spline_horizon, len(self.waypoints))
-
-        self.new_index = waypoint_index 
-        return self.waypoints[waypoint_index: horizon_index, :]
-
-    def is_finished(self):
-        if  self.new_index is not None and  self.new_index >= len(self.waypoints) -1:
-            self.waypoints, self.next_waypoints = None, None
-            return True
-
-        return False
 
     @staticmethod
     def apply_parametric_spline(waypoints, interval, order=1):
