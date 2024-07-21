@@ -14,14 +14,14 @@ camera:
 scheduler:
     mass_threshold: 30. # kg
     path_inflation: 0.3 # meters
-    spline_interval: 0.5 # meters
-    spline_horizon: 2
+    spline_interval: 0.25 # meters
+    spline_horizon: 3
 
 controller:
     pos_tolerance: 0.1  # meters
     yaw_tolerance: 0.1  # radian
     vel_tolerance: 0.2  # m/s
-    replan_timing: 10.  # seconds
+    replan_timing: 15.  # seconds
  
 objects:
     wall:
@@ -34,7 +34,7 @@ objects:
     box:
         type: "box"
         size: [0.600, 0.600, 0.600]
-        friction: 0.30030
+        friction: 0.300
         mass: 5.00
         color: [0.9, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
@@ -57,7 +57,7 @@ objects:
         type: "box"
         size: [0.500, 0.500, 0.700]
         friction: 1.500
-        mass: 30.00
+        mass: 25.00
         color: [0.6, 0.2, 0.0]
         noise_sigma_size: [0.005, 0.005, 0.0]
         noise_percentage_friction: 0.3
