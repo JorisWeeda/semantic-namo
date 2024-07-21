@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from isaacgym import gymapi
 
-import numpy as np
 import time
 import rospy
 import hydra
@@ -56,8 +55,12 @@ if __name__ == "__main__":
         if (time.time() - start_time >= 2) and scheduler.waypoints is None:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
             res, graph, waypoints, _ = scheduler.generate_path(robot_dof, actors, mode='svg')
+
             if res:
                 dashboard.update_planning(actors, waypoints, graph)
+
+            if waypoints is not None:
+                world.update_objective(waypoints)
 
         if replanning:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
@@ -66,15 +69,11 @@ if __name__ == "__main__":
             if res:
                 dashboard.update_planning(actors, waypoints, graph)
 
-        robot_dof = world.get_robot_dofs()
-        waypoints = scheduler.get_next_waypoints(robot_dof)
-        if waypoints is not None:
-            world.update_objective(waypoints)
-
         action, replanning = world.run()
         monitor.step_monitoring()
 
-        print(f'robot_dof: {robot_dof[1], robot_dof[3], robot_dof[5]}')
+        robot_dof = world.get_robot_dofs()
+        print(f'action: {action}, robot_dof: {robot_dof[1], robot_dof[3], robot_dof[5]}')
 
         if world.is_finished() and scheduler.is_finished():
             break
@@ -92,6 +91,7 @@ if __name__ == "__main__":
 
     monitor.stop_monitoring()
 
-    # pandasgui.show(**monitor.data)
+    if use_viewer:
+        pandasgui.show(**monitor.data)
 
-    # monitor.request_save()
+        monitor.request_save()

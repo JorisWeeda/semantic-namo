@@ -141,13 +141,10 @@ class PhysicalWorld:
         action_array = action.cpu().numpy()
         if np.all(np.abs(q_dot_rob) < 1e-1):
             rospy.logwarn_throttle(2, "Velocities are too close to zero, watchdog active")
-            pass
-        elif np.all(np.abs(q_dot_rob) > 0.5 * np.abs(action_array)):
-            rospy.logwarn_throttle(2, "Desired velocity cannot be reached, watchdog active")
-            pass
+        elif np.all(np.abs(q_dot_rob - action_array) > 0.5 * np.abs(action_array)):
+            rospy.logwarn_throttle(2, "Desired velocity is more than 50% away, watchdog active")
         elif np.all(np.abs(q_rob) < 1e-1) and np.any(np.abs(q_dot_rob) > 1e-1):
             rospy.logwarn_throttle(2, "Robot is slipping, watchdog active")
-            pass
         else:
             self.replan_watchdog = time.time()
 
@@ -167,9 +164,8 @@ class PhysicalWorld:
         torch_waypoints  = torch.from_numpy(waypoints).float()
         torch_waypoints = torch_waypoints.to(self.device)
         
-        self._goal = waypoints[0, :]
-
         self.controller.update_objective(torch_waypoints)
+        self._goal = waypoints[-1, :]
 
     def is_finished(self):
         if self.is_goal_reached:
@@ -211,7 +207,7 @@ class PhysicalWorld:
 
             cos_yaw = torch.cos(torch.tensor([curr_yaw]))
             sin_yaw = torch.sin(torch.tensor([curr_yaw]))
-            self.robot_R = torch.tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]])
+            self.robot_R = torch.tensor([[cos_yaw, -sin_yaw], [sin_yaw, cos_yaw]], device=self.device)
             
             self.robot_q_dot = torch.tensor([linear_velocity[0], linear_velocity[1], angular_velocity], dtype=torch.double,device=self.device)
             

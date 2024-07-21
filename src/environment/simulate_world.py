@@ -319,13 +319,10 @@ class SimulateWorld:
         action_array = action.cpu().numpy()
         if np.all(np.abs(q_dot_rob) < 1e-1):
             rospy.logwarn_throttle(2, "Velocities are too close to zero, watchdog active")
-            pass
-        elif np.all(np.abs(q_dot_rob) > 0.5 * np.abs(action_array)):
-            rospy.logwarn_throttle(2, "Desired velocity cannot be reached, watchdog active")
-            pass
+        elif np.all(np.abs(q_dot_rob - action_array) > 0.5 * np.abs(action_array)):
+            rospy.logwarn_throttle(2, "Desired velocity is more than 50% away, watchdog active")
         elif np.all(np.abs(q_rob) < 1e-1) and np.any(np.abs(q_dot_rob) > 1e-1):
             rospy.logwarn_throttle(2, "Robot is slipping, watchdog active")
-            pass
         else:
             self.replan_watchdog = time.time()
 
@@ -346,7 +343,7 @@ class SimulateWorld:
         bytes_waypoints = self.torch_to_bytes(torch_waypoints)
 
         self.controller.update_objective(bytes_waypoints)
-        self._goal = waypoints[0, :]
+        self._goal = waypoints[-1, :]
 
     def is_finished(self):
         if self.is_goal_reached:
