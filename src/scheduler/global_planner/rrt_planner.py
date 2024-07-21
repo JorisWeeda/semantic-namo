@@ -125,8 +125,7 @@ class RRT:
 
             polygon = Polygon(corners)
             polygon = rotate(polygon, obs_rot, use_radians=True)
-            polygon = buffer(polygon, inflation,
-                             cap_style='flat', join_style='mitre')
+            polygon = buffer(polygon, inflation, cap_style='flat', join_style='bevel')
 
             shapes.append(polygon)
 

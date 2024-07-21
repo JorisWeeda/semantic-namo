@@ -13,7 +13,7 @@ from tkinter import filedialog
 from tf.transformations import euler_from_quaternion
 
 from geometry_msgs.msg import Twist
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from puma_motor_msgs.msg import MultiFeedback
 
@@ -41,16 +41,16 @@ class Monitor:
         self.twist_cmd = {"t": [], "lin_x": [], "lin_y": [],"ang_z": []}
 
     def configure_physical_monitor(self, robot_name):
-        rospy.Subscriber(f'/vicon/{robot_name}', PoseWithCovarianceStamped, self.cb_robot_state, queue_size=1,)
-        rospy.wait_for_message(f'/vicon/{robot_name}', PoseWithCovarianceStamped, timeout=10)
+        rospy.Subscriber(f'/vicon/{robot_name}', PoseStamped, self.cb_robot_state, queue_size=1,)
+        rospy.wait_for_message(f'/vicon/{robot_name}', PoseStamped, timeout=10)
 
-        rospy.Subscriber('/feedback', MultiFeedback, self.cb_robot_feedback)
-        rospy.wait_for_message('/feedback', MultiFeedback, timeout=10)
+        rospy.Subscriber(f'/{robot_name}/feedback', MultiFeedback, self.cb_robot_feedback)
+        rospy.wait_for_message(f'/{robot_name}/feedback', MultiFeedback, timeout=10)
 
-        rospy.Subscriber('/joint_states', JointState, self.cb_joint_states)
-        rospy.wait_for_message('/joint_states', JointState, timeout=10)
+        rospy.Subscriber(f'/{robot_name}/joint_states', JointState, self.cb_joint_states)
+        rospy.wait_for_message(f'/{robot_name}/joint_states', JointState, timeout=10)
 
-        rospy.Subscriber('/cmd_vel', Twist, self.cb_cmd_vel)
+        rospy.Subscriber(f'/{robot_name}/cmd_vel', Twist, self.cb_cmd_vel)
 
     def configure_simulate_monitor(cls, sim):
         for actor in range(1, len(sim.env_cfg)):
@@ -105,14 +105,14 @@ class Monitor:
         if self.active_monitor:
             elapsed_time = rospy.get_time() - self.start_time
 
-            curr_pos = np.array([msg.pose.pose.position.x, msg.pose.pose.position.y])
-            curr_ori = msg.pose.pose.orientation
+            curr_pos = np.array([msg.pose.position.x, msg.pose.position.y])
+            curr_ori = msg.pose.orientation
 
             _, _, curr_yaw = euler_from_quaternion([curr_ori.x, curr_ori.y, curr_ori.z, curr_ori.w])
 
             if self._prev_msg_robot_state is not None:
-                prev_pos = np.array([self._prev_msg_robot_state.pose.pose.position.x, self._prev_msg_robot_state.pose.pose.position.y])
-                prev_ori = self._prev_msg_robot_state.pose.pose.orientation
+                prev_pos = np.array([self._prev_msg_robot_state.pose.position.x, self._prev_msg_robot_state.pose.position.y])
+                prev_ori = self._prev_msg_robot_state.pose.orientation
 
                 _, _, prev_yaw = euler_from_quaternion([prev_ori.x, prev_ori.y, prev_ori.z, prev_ori.w])
 

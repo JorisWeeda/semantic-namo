@@ -1,15 +1,50 @@
 name: "Vicon"
 description: "Navigation Among Movable Obstacles: Simulated Approach"
 
-range_x: [-4.0, 4.0]
-range_y: [-4.0, 4.0]
+range_x: [-2.5, 2.5]
+range_y: [-2.5, 2.5]
 
-goal: [0., 0.]
+goal: [1., 1.]
 
 camera:
     pos: [-6., 0., 5.]
     tar: [0., 0., 0.]
 
 environment:
+    demarcation:
+        - wall:
+            name: "f-demarcation-wall"
+            size: [5.0, 0.2, 0.5]
+            init_pos: [0.0, 2.6, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - wall:
+            name: "b-demarcation-wall"
+            size: [5.0, 0.2, 0.5]
+            init_pos: [0.0, -2.6, 0.0]
+            init_ori: [0.0, 0.0, 0.0]
+        - wall:
+            name: "l-demarcation-wall"
+            size: [5.0, 0.2, 0.5]
+            init_pos: [-2.6, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+        - wall:
+            name: "r-demarcation-wall"
+            size: [5.0, 0.2, 0.5]
+            init_pos: [2.6, 0.0, 0.0]
+            init_ori: [0.0, 0.0, 90.0]
+
+    obstacles:
+        - box:
+            name: "Box 1"
+            init_pos: [-0.75, -0.75, 0.25]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 2"
+            init_pos: [-0.75, -1.8, 0.25]
+            init_ori: [0.0, 0.0, 0.0]
+        - box:
+            name: "Box 3"
+            init_pos: [-1.8, -0.75, 0.25]
+            init_ori: [0.0, 0.0, 0.0]
     robot:
-        init_state: [0., 0., 0.]
+        init_state: [-1.75, -1.75, 0.]
