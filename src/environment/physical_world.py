@@ -163,7 +163,7 @@ class PhysicalWorld:
     def update_objective(self, waypoints):
         torch_waypoints  = torch.from_numpy(waypoints).float()
         torch_waypoints = torch_waypoints.to(self.device)
-        
+
         self.controller.update_objective(torch_waypoints)
         self._goal = waypoints[-1, :]
 

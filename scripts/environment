@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-from isaacgym import gymapi
-
 import time
 import rospy
 import hydra
@@ -65,7 +62,7 @@ if __name__ == "__main__":
         if replanning:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
             res, graph, waypoints, _ = scheduler.generate_path(robot_dof, actors, mode='svg')
-            replanning = False        
+            replanning = False
             if res:
                 dashboard.update_planning(actors, waypoints, graph)
 
@@ -73,9 +70,14 @@ if __name__ == "__main__":
         monitor.step_monitoring()
 
         robot_dof = world.get_robot_dofs()
-        print(f'action: {action}, robot_dof: {robot_dof[1], robot_dof[3], robot_dof[5]}')
+        print(f'robot_dof: {robot_dof[1], robot_dof[3], robot_dof[5]}')
 
-        if world.is_finished() and scheduler.is_finished():
+        if use_dashboard:
+            rollouts = world.get_rollout_states()
+            best_rollout = world.get_rollout_best_state()
+            dashboard.update_rollouts(rollouts, best_rollout)
+
+        if scheduler.waypoints is not None and world.is_finished():
             break
 
         if is_simulation and action is not None:

@@ -10,6 +10,9 @@ from tf.transformations import euler_from_quaternion
 from shapely.affinity import rotate
 
 
+plt.ion()
+
+
 class Dashboard:
 
     PKG_PATH = roslib.packages.get_pkg_dir("semantic_namo")
@@ -37,10 +40,7 @@ class Dashboard:
 
         range_x = params['range_x']
         range_y = params['range_y']
-
-        plt.ion()
-        plt.show()
-
+        
         return cls(range_x, range_y)
 
     def update_overview(self, actors, states):
@@ -125,7 +125,8 @@ class Dashboard:
             self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], 'g-o', linewidth=2)
 
         self.ax_2.set_title('Global path planning')
-        self.ax_2.autoscale(enable=True)
+        self.ax_2.set_xlim(*self.range_x)
+        self.ax_2.set_ylim(*self.range_y)        
         self.ax_2.set_aspect('equal')
 
         self.ax_2.set_xlabel('X Position')
@@ -133,7 +134,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(2)
+        plt.pause(0.1)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:
@@ -141,30 +142,29 @@ class Dashboard:
 
         self.ax_3.clear()
 
-        if rollout_states.numel():
+        rollout_states, best_states = rollout_states.cpu(), best_states.cpu()
+        if rollout_states.numel() > 0:
             colors = plt.cm.viridis(np.linspace(0, 1, rollout_states.shape[0]))
 
             for i in range(rollout_states.shape[0]):
-                x_values, y_values = rollout_states[i,
-                                                    :, 0], rollout_states[i, :, 2]
+                x_values, y_values = rollout_states[i, :, 0], rollout_states[i, :, 2]
                 self.ax_3.plot(y_values, x_values, color=colors[i], alpha=0.4)
 
-            x_values_best, y_values_best = best_states[0,
-                                                       :, 0], best_states[0, :, 2]
-            self.ax_3.plot(y_values_best, x_values_best,
-                           color='red', alpha=1.0)
+            x_values_best, y_values_best = best_states[0, :, 0], best_states[0, :, 2]
+            self.ax_3.plot(y_values_best, x_values_best, color='red', alpha=1.0)
 
         self.ax_3.set_title('Robot DOF rollouts')
-        self.ax_3.autoscale(enable=True)
         self.ax_3.set_aspect('equal')
+
+        self.ax_3.autoscale(enable=True)
 
         self.ax_3.set_xlabel(r'$\longleftarrow$ Y Position')
         self.ax_3.set_ylabel(r'X Position $\longrightarrow$')
-
         self.ax_3.invert_xaxis()
-
+        
         self.fig_rollouts.canvas.draw()
         self.fig_rollouts.canvas.flush_events()
+        plt.pause(0.1)
 
     def update_progress(self, dofs, goal):
         if self.fig_progress is None:

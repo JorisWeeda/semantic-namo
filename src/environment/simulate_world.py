@@ -319,8 +319,8 @@ class SimulateWorld:
         action_array = action.cpu().numpy()
         if np.all(np.abs(q_dot_rob) < 1e-1):
             rospy.logwarn_throttle(2, "Velocities are too close to zero, watchdog active")
-        elif np.all(np.abs(q_dot_rob - action_array) > 0.5 * np.abs(action_array)):
-            rospy.logwarn_throttle(2, "Desired velocity is more than 50% away, watchdog active")
+        elif np.all(np.abs(q_dot_rob - action_array) > 0.75 * np.abs(action_array)):
+            rospy.logwarn_throttle(2, "Desired velocity is more than 75% away, watchdog active")
         elif np.all(np.abs(q_rob) < 1e-1) and np.any(np.abs(q_dot_rob) > 1e-1):
             rospy.logwarn_throttle(2, "Robot is slipping, watchdog active")
         else:
@@ -399,7 +399,7 @@ class SimulateWorld:
         robot_position = torch.tensor([robot_x, robot_y])
 
         distances = torch.norm(obstacle_positions - robot_position, dim=1)
-        
+
         closest_obstacle_index = torch.argmin(distances).item()
         return closest_obstacle_index
 
