@@ -29,14 +29,6 @@
             </node>
         </group>
 
-        <include file="$(find vicon_bridge)/launch/vicon.launch">
-            <arg name="only_use_object_specific" default="true"/>
-            <arg name="object_names" value="[$(arg robot_name), $(arg obs_name_1), $(arg obs_name_2)]"/>
-            <arg name="object_msg_types" value="[geometry_msgs/PoseStamped, geometry_msgs/PoseStamped, geometry_msgs/PoseStamped]"/>
-            <arg name="object_frame_ids" value="[map, map, map]"/>
-            <arg name="object_publish_topics" value="[/vicon/$(arg robot_name), /vicon/$(arg obs_name_1), /vicon/$(arg obs_name_2)]"/>
-            <arg name="object_frequency_divider" value="[1, 1, 1]"/>
-          </include>
     </group>
 
     <node name="environment" pkg="semantic_namo" type="environment" output="screen" required="true" launch-prefix="$(arg venv)">

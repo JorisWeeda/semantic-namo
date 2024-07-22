@@ -14,6 +14,7 @@ import yaml
 import numpy as np
 
 from functools import partial
+from scipy.spatial.transform import Rotation
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped
 
@@ -87,7 +88,9 @@ class PhysicalWorld:
         rospy.Subscriber(f'/vicon/{robot_name}', PoseStamped, self._cb_robot_state, queue_size=1,)
         rospy.wait_for_message(f'/vicon/{robot_name}', PoseStamped, timeout=10)
         
-        self.update_objective(np.array([[self.robot_q[0], self.robot_q[1]]]))
+        robot_q = self.robot_q.cpu()
+
+        self.update_objective(np.array([[robot_q[0], robot_q[1]]]))
         self.robot = Dingo(robot_name)
 
         self.replan_watchdog = time.time()
@@ -112,6 +115,17 @@ class PhysicalWorld:
 
                     additions.append(obstacle)
 
+            if self.params["environment"].get("demarcation", None):
+                for wall in self.params["environment"]["demarcation"]:
+                    obs_type = next(iter(wall))
+                    obs_args = self.params["objects"][obs_type]
+
+                    obstacle = {**obs_args, **wall[obs_type]}
+
+                    rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
+                    obstacle["init_ori"] = list(rot)
+
+                    additions.append(obstacle)
         return additions
 
     def run(self):
@@ -217,7 +231,8 @@ class PhysicalWorld:
 
     def _cb_obstacle_state(self, idx, msg):
         pos, ori = msg.pose.position, msg.pose.orientation
-        self.obstacle_states[idx] = [pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w]
+        _, _, obs_yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
+        self.obstacle_states[idx] = [pos.x, pos.y, 0., *self.yaw_to_quaternion(obs_yaw)]
 
     def get_robot_dofs(self):
         q, q_dot = self.robot_q, self.robot_q_dot
