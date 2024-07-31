@@ -89,18 +89,20 @@ class SVG:
             passage_dict[passage_identifier].append((x, y, cost))
         
         for passage_identifier, nodes in passage_dict.items():
-            entry_node, exit_node = nodes[0], nodes[1]
+            if len(nodes) > 0:
+                entry_node = nodes[0]
+                graph = self.add_node_to_graph(graph, entry_node, polygons, knn=2)
 
-            graph = self.add_node_to_graph(graph, entry_node, polygons, knn=2)
-            graph = self.add_node_to_graph(graph, exit_node, polygons, knn=2, connect_to_last=True)
+            if len(nodes) > 1:
+                exit_node = nodes[1]
+                graph = self.add_node_to_graph(graph, exit_node, polygons, knn=2, connect_to_last=True)
 
-            entry_node_index = list(graph.nodes)[-2]
-            exit_node_index = list(graph.nodes)[-1]
+            if len(nodes) > 2:
+                entry_node_index = list(graph.nodes)[-2]
+                exit_node_index = list(graph.nodes)[-1]
 
-            if not graph.has_edge(entry_node_index, exit_node_index) and len(nodes) > 2:
-                bridging_node = nodes[2]
-                self.add_node_to_graph(graph, bridging_node, polygons, knn=2)
-
+                if not graph.has_edge(entry_node_index, exit_node_index):
+                    self.add_node_to_graph(graph, nodes[2], polygons, knn=4, connect_to_last=True)
         return graph
 
     def generate_polygons(self, actors, overwrite_inflation=None):
@@ -181,12 +183,7 @@ class SVG:
             if minimum_distance > (2 * self.path_inflation):
                 continue
 
-            # Exception 3: The distance between the obstacles is already sufficient
-            if masses[id_1] >= self.mass_threshold or masses[id_2] >= self.mass_threshold:
-                if minimum_distance < self.path_inflation:
-                    continue
-
-            # Exception 3: The distance between the obstacles is already sufficient
+            # Exception 3: obstacles overlap as convex shapes
             if light_ob.intersects(heavy_ob):
                 continue
 
@@ -194,7 +191,6 @@ class SVG:
             convex_hull = MultiPoint(points_list).convex_hull
 
             coords = list(convex_hull.exterior.coords) if convex_hull.geom_type == 'Polygon' else list(convex_hull.coords)
-
             for coord_idx in range(len(coords) - 1):
                 p1, p2 = Point(coords[coord_idx]), Point(coords[coord_idx + 1])
 
@@ -207,16 +203,43 @@ class SVG:
                 boundary = LineString([coords[coord_idx], coords[coord_idx + 1]])
 
                 mass_p1 = heavy_mass if self.is_point_in_shape(Point(boundary.coords[0]), heavy_ob) else light_mass
-                interpolation_distance = min(boundary.length / (light_mass + heavy_mass) * mass_p1, self.path_inflation)
+                
+                interpolation_distance = boundary.length / (light_mass + heavy_mass) * mass_p1
+
+                if interpolation_distance > boundary.length:
+                    interpolation_distance = boundary.length
+
+                if interpolation_distance > self.path_inflation:
+                    interpolation_distance = self.path_inflation
 
                 passage_point = boundary.interpolate(interpolation_distance)
-                passage_cost = ((2 * self.path_inflation - minimum_distance) * masses[light_id]) / 2
+                
+                light_ob_distance = passage_point.distance(light_ob)
+                heavy_ob_distance = passage_point.distance(heavy_ob)
+            
+                light_ob_cost = max(0, 1 - (light_ob_distance / self.path_inflation)) * light_mass
+                heavy_ob_cost = max(0, 1 - (heavy_ob_distance / self.path_inflation)) * heavy_mass
+
+                heavy_ob_cost = heavy_ob_cost if heavy_mass < self.mass_threshold else 0.
+            
+                passage_cost = light_ob_cost + heavy_ob_cost
+                passage_point = boundary.interpolate(interpolation_distance)
 
                 passages = np.vstack((passages, (passage_point.x, passage_point.y, passage_cost, passage_identifier)))
 
             if convex_hull.geom_type == 'Polygon':
                 heavy_mass, light_mass = masses[heavy_id], masses[light_id]
-                interpolation_distance = min(shortest_line.length / (heavy_mass + light_mass) * light_mass, self.path_inflation)
+                interpolation_distance = shortest_line.length / (light_mass + heavy_mass) * light_mass
+
+                if masses[id_1] >= self.mass_threshold or masses[id_2] >= self.mass_threshold:
+                    if shortest_line.length < self.path_inflation and mass_p1 == light_mass:
+                        interpolation_distance = boundary.length - self.path_inflation
+
+                if interpolation_distance > self.path_inflation:
+                    interpolation_distance = self.path_inflation
+
+                if interpolation_distance > shortest_line.length:
+                    interpolation_distance = shortest_line.length
 
                 bridge_point = shortest_line.interpolate(interpolation_distance)
                 passages = np.vstack((passages, (bridge_point.x, bridge_point.y, 0., passage_identifier)))
@@ -231,10 +254,10 @@ class SVG:
 
         corner_nodes = []
         for polygon in free_polygons:
-            for corner in polygon.exterior.coords[:-1]:
+            for corner in polygon.exterior.coords:
                 corner_nodes.append(corner)
             for interior in polygon.interiors:
-                for corner in interior.coords[:-1]:
+                for corner in interior.coords:
                     corner_nodes.append(corner)
 
         return np.array(corner_nodes)

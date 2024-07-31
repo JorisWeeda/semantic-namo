@@ -125,10 +125,13 @@ class PhysicalWorld:
                     rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
                     obstacle["init_ori"] = list(rot)
 
+                    self.obstacle_states.append([*obstacle["init_pos"], *obstacle["init_ori"]])
+
                     additions.append(obstacle)
+
         return additions
 
-    def run(self):
+    def run(self, use_replanner=True):
         if self.robot_prev_msg is not None:
             obstacle_state_tensor = torch.tensor(self.obstacle_states)
             obstacle_state_tensor = self.add_zero_columns(obstacle_state_tensor)
@@ -140,6 +143,9 @@ class PhysicalWorld:
                 self.robot.move(*action)
             else:
                 rospy.loginfo_throttle(1, "The goal is reached, no action applied to the robot.")
+
+        if not use_replanner:
+            return action, False
 
         replan = False if self.is_goal_reached else self.evaluate_push_action(action)
         return action, replan
@@ -185,6 +191,7 @@ class PhysicalWorld:
         if self.is_goal_reached:
             if self.robot_q_dot[0] < self.vel_tolerance and self.robot_q_dot[1] < self.vel_tolerance:
                 return True
+            
         return False
 
     def check_goal_reached(self):

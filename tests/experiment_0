@@ -39,7 +39,7 @@ class Experiment0:
         hydra.initialize(config_path="../config", version_base=None)
 
         config = rospy.get_param('~config')
-        layout = 'experiment_0'
+        layout = 'simple_vg'
 
         gym_world = SimulateWorld.build(hydra.compose(config), layout, True)
         scheduler = Scheduler.create_scheduler(layout)
@@ -106,13 +106,11 @@ class Experiment0:
         exec_run_result = False
         exec_start_time = time.time()
 
-        while path_is_ready:
-            robot_dof = self.gym_world.get_robot_dofs()
-            waypoints = self.scheduler.get_next_waypoints(robot_dof)
-            if waypoints is not None:
-                self.gym_world.update_objective(waypoints)
+        self.gym_world.update_objective(self.scheduler.waypoints)
 
-            _ = self.gym_world.run()
+        while path_is_ready:
+
+            _, _ = self.gym_world.run(use_replanner=True)
 
             exec_net_forces += self.gym_world.get_net_forces()
 
@@ -134,10 +132,16 @@ class Experiment0:
         q_init = [robot_dof[0], robot_dof[2]]
         q_goal = self.gym_world.params['goal']
 
+        x_min, x_max = self.gym_world.params['range_x']
+        y_min, y_max = self.gym_world.params['range_y']
+
         _, ax = plt.subplots(figsize=(25, 5))
 
         max_mass = self.gym_world.params['scheduler']['mass_threshold']
         for actor, state in zip(*actors):
+            if actor.type == 'robot':
+                continue
+
             mass = actor.mass
             size = actor.size
 
@@ -157,9 +161,6 @@ class Experiment0:
             patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / max_mass))
             ax.add_patch(patch_polygon)
 
-        ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=70, zorder=2, label='Start')
-        ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=80, zorder=2, label='Goal')
-
         if graph is not None:
             edges = np.array([(graph.nodes[u]['pos'], graph.nodes[v]['pos']) for u, v in graph.edges])
             for edge in edges:
@@ -169,15 +170,21 @@ class Experiment0:
             path = np.array(path)
             ax.plot(path[:, 0], path[:, 1], color='darkgreen', marker='o', markersize=3, label='Path')
 
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
-        cbar = plt.colorbar(sm, ax=ax)
-        cbar.set_label('Mass')
+        ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=100, zorder=2, label='Start')
+        ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=100, zorder=2, label='Goal')
 
-        ax.autoscale(enable=True)
+        # sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
+        # cbar = plt.colorbar(sm, ax=ax)
+        # cbar.set_label('Mass')
+
+        ax.set_xlim(x_min - 0.5, x_max + 1.5)
+        ax.set_ylim(y_min - 0.5, y_max + 0.5)
+
         ax.set_title('Obstacles and Paths')
         ax.set_xlabel('X Axis')
         ax.set_ylabel('Y Axis')
         ax.set_aspect('equal')
+        ax.legend()
 
         plt.show()
 

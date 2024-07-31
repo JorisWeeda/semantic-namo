@@ -40,8 +40,8 @@ class Experiment3:
     USE_PRM = False
     USE_RRT = True
 
-    RUN_SIM = False
-    SAVE_IMG = False
+    RUN_SIM = True
+    SAVE_IMG = True
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world

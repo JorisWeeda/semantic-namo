@@ -12,15 +12,15 @@ camera:
     tar: [0., 0., 0.]
 
 scheduler:
-    mass_threshold: 30. # kg
-    path_inflation: 0.3 # meters
-    spline_interval: .2 # meters
+    mass_threshold: 30.  # kg
+    path_inflation: 0.3  # meters
+    spline_interval: .5 # meters
 
 controller:
-    pos_tolerance: 0.1  # meters
-    yaw_tolerance: 0.1  # radian
+    pos_tolerance: 1.0  # meters
+    yaw_tolerance: 0.2  # radian
     vel_tolerance: 0.2  # m/s
-    replan_timing: 15.  # seconds
+    replan_timing: 30.   # seconds
 
 objects:
     wall:
@@ -89,7 +89,7 @@ objects:
     stationary:
         type: "box"
         size: [0.75, 0.75, 0.50]
-        friction: 1.500
+        friction: 1.00
         mass: 50.00
         color: [0.2, 0.2, 0.2]
         noise_sigma_size: [0.005, 0.005, 0.0]
@@ -107,5 +107,53 @@ objects:
         noise_sigma_size: [0.005, 0.005, 0.0]
         noise_percentage_friction: 0.
         noise_percentage_mass: 0.8
+        fixed: False
+        collision: True
+
+    square_light:
+        type: "box"
+        size: [0.610, 0.610, 0.610]
+        friction: 1.000
+        mass: 5.00
+        color: [0.9, 0.2, 0.0]
+        noise_sigma_size: [0.005, 0.005, 0.0]
+        noise_percentage_friction: 0.3
+        noise_percentage_mass: 0.
+        fixed: False
+        collision: True
+    
+    square_heavy:
+        type: "box"
+        size: [0.610, 0.610, 0.610]
+        friction: 1.000
+        mass: 45.00
+        color: [0.0, 0.7, 0.2]
+        noise_sigma_size: [0.005, 0.005, 0.0]
+        noise_percentage_friction: 0.3
+        noise_percentage_mass: 0.
+        fixed: False
+        collision: True
+
+    rectangle_light:
+        type: "box"
+        size: [1.220, 0.610, 0.610]
+        color: [0.0, 0.2, 0.9]
+        friction: 1.00
+        mass: 45.00
+        noise_sigma_size: [0.005, 0.005, 0.0]
+        noise_percentage_friction: 0.3
+        noise_percentage_mass: 0.
+        fixed: False
+        collision: True
+
+    rectangle_heavy:
+        type: "box"
+        size: [1.220, 0.610, 0.610]
+        color: [0.6, 0.1, 0.7]
+        friction: 1.00
+        mass: 1000.00
+        noise_sigma_size: [0.005, 0.005, 0.0]
+        noise_percentage_friction: 0.3
+        noise_percentage_mass: 0.
         fixed: False
         collision: True

@@ -286,7 +286,7 @@ class SimulateWorld:
 
         return walls
 
-    def run(self):
+    def run(self, use_replanner=True):
         df_state_tensor = self.torch_to_bytes(self.simulation.dof_state)
         rt_state_tensor = self.torch_to_bytes(self.simulation.root_state)
         rb_state_tensor = self.torch_to_bytes(self.simulation.rigid_body_state)
@@ -304,6 +304,9 @@ class SimulateWorld:
 
         self.simulation.apply_robot_cmd(action)
         self.simulation.step()
+
+        if not use_replanner:
+            return action, False
 
         replan = False if self.is_goal_reached else self.evaluate_push_action(action)
         return action, replan

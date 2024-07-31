@@ -45,16 +45,14 @@ if __name__ == "__main__":
     rate = rospy.Rate(1 / world.config['isaacgym']['dt'])
 
     replanning = False
-    start_time = time.time()
+    start_time = time.perf_counter()
     while not rospy.is_shutdown():
-        loop_start_time = time.time()
+        loop_start_time = time.perf_counter()
 
-        if (time.time() - start_time >= 2) and scheduler.waypoints is None:
+        if (time.perf_counter() - start_time >= 2) and scheduler.waypoints is None:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
             res, graph, waypoints, _ = scheduler.generate_path(robot_dof, actors, mode='svg')
-
-            if res:
-                dashboard.update_planning(actors, waypoints, graph)
+            dashboard.update_planning(actors, waypoints, graph)
 
             if waypoints is not None:
                 world.update_objective(waypoints)
@@ -66,11 +64,8 @@ if __name__ == "__main__":
             if res:
                 dashboard.update_planning(actors, waypoints, graph)
 
-        action, replanning = world.run()
-        monitor.step_monitoring()
-
-        robot_dof = world.get_robot_dofs()
-        print(f'robot_dof: {robot_dof[1], robot_dof[3], robot_dof[5]}')
+        action, replanning = world.run(use_replanner=False)
+        # monitor.step_monitoring()
 
         if use_dashboard:
             rollouts = world.get_rollout_states()
@@ -83,8 +78,7 @@ if __name__ == "__main__":
         if is_simulation and action is not None:
             monitor.cb_simulate(world.simulation, action.cpu().numpy())
 
-        if (time.time() - loop_start_time) > (1.0 / rate.sleep_dur.to_sec()):
-            rospy.logwarn("Loop rate frequency not met.")
+        rate.sleep()
 
     if is_simulation:
         world.destroy()

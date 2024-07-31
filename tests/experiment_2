@@ -27,8 +27,8 @@ class Experiment2:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/experiment_2/'
 
-    MAX_EXEC_DURATION = 150
-    ROOM_ITERATONS = 1
+    MAX_EXEC_DURATION = 300
+    ROOM_ITERATONS = 20
    
     DIMENSION_ROOM_X = 2.
     DIMENSION_ROOM_Y = 4.
@@ -40,6 +40,8 @@ class Experiment2:
     USE_SVG = True
     USE_PRM = False
     USE_RRT = True
+
+    DISPLAY = False
 
     RUN_SIM = True
     SAVE_IMG = True
@@ -62,7 +64,7 @@ class Experiment2:
         config = rospy.get_param('~config')
         layout = rospy.get_param('~layout')
 
-        gym_world = SimulateWorld.create(hydra.compose(config), layout, False)
+        gym_world = SimulateWorld.create(hydra.compose(config), layout, cls.DISPLAY)
         scheduler = Scheduler.create_scheduler(layout)
 
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
@@ -87,7 +89,8 @@ class Experiment2:
                             'runner': [],
                             'runner_result': [],
                             'runner_force': [],
-                            'runner_time': []
+                            'runner_time': [],
+                            'runner_replans': []
                             }
 
             self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
@@ -124,12 +127,13 @@ class Experiment2:
             run_nvg_result, run_nvg_force, run_nvg_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing NVG path in environment.')
-                run_nvg_result, run_nvg_time, run_nvg_force = self.run_trajectory(nvg_result, additions)
+                run_nvg_result, run_nvg_time, run_nvg_force, run_nvg_replans = self.run_trajectory(nvg_result, nvg_path, additions, 'nvg')
 
             configurations["runner"].append('mppi') 
             configurations["runner_result"].append(run_nvg_result)
             configurations["runner_force"].append(run_nvg_force)
             configurations["runner_time"].append(run_nvg_time)
+            configurations["runner_replans"].append(run_nvg_replans)
 
         if rospy.is_shutdown():
             return
@@ -151,12 +155,13 @@ class Experiment2:
             run_svg_result, run_svg_force, run_svg_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing SVG path in environment.')
-                run_svg_result, run_svg_time, run_svg_force = self.run_trajectory(svg_result, additions)
+                run_svg_result, run_svg_time, run_svg_force, run_svg_replans = self.run_trajectory(svg_result, svg_path, additions, 'svg')
 
             configurations["runner"].append('mppi') 
             configurations["runner_result"].append(run_svg_result)
             configurations["runner_force"].append(run_svg_force)
             configurations["runner_time"].append(run_svg_time)
+            configurations["runner_replans"].append(run_svg_replans)
 
         if rospy.is_shutdown():
             return
@@ -178,12 +183,13 @@ class Experiment2:
             run_prm_result, run_prm_force, run_prm_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing PRM path in environment.')
-                run_prm_result, run_prm_time, run_prm_force = self.run_trajectory(prm_result, additions)
+                run_prm_result, run_prm_time, run_prm_force, run_prm_replans = self.run_trajectory(prm_result, prm_path, additions, 'prm')
 
             configurations["runner"].append('mppi') 
             configurations["runner_result"].append(run_prm_result)
             configurations["runner_force"].append(run_prm_force)
             configurations["runner_time"].append(run_prm_time)
+            configurations["runner_replans"].append(run_prm_replans)
 
         if rospy.is_shutdown():
             return
@@ -205,12 +211,13 @@ class Experiment2:
             run_rrt_result, run_rrt_force, run_rrt_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing RRT path in environment.')
-                run_rrt_result, run_rrt_time, run_rrt_force = self.run_trajectory(rrt_result, additions)
+                run_rrt_result, run_rrt_time, run_rrt_force, run_rrt_replans = self.run_trajectory(rrt_result, rrt_path, additions, 'rrt')
 
             configurations["runner"].append('mppi') 
             configurations["runner_result"].append(run_rrt_result)
             configurations["runner_force"].append(run_rrt_force)
             configurations["runner_time"].append(run_rrt_time)
+            configurations["runner_replans"].append(run_rrt_replans)
 
         if rospy.is_shutdown():
             return
@@ -255,7 +262,7 @@ class Experiment2:
         self.scheduler.robot_goal_pos[1] = y - 0.5
 
         self.scheduler.robot_goal_pos[0] = 0.
-        self.scheduler.robot_goal_pos[1] = y - 1.5
+        self.scheduler.robot_goal_pos[1] = y - 1.
 
         self.gym_world.params["environment"]["robot"]["init_state"] = [0., - y + .5, 90]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
@@ -301,24 +308,40 @@ class Experiment2:
         exec_time = time.time() - start_time
         return result, graph, exec_time, path, cost
 
-    def run_trajectory(self, path_is_ready, additions):
+    def run_trajectory(self, path_is_ready, waypoints, additions, replanner=None):
         self.gym_world.configure(additions=additions, apply_mass_noise=False)
 
         exec_net_forces = 0.0
         exec_run_result = False
         exec_start_time = time.time()
 
-        while path_is_ready:
-            robot_dof = self.gym_world.get_robot_dofs()
-            waypoints = self.scheduler.get_next_waypoints(robot_dof)
-            if waypoints is not None:
-                self.gym_world.update_objective(waypoints)
+        if path_is_ready:
+            self.gym_world.update_objective(waypoints)
 
-            _ = self.gym_world.run()
+        use_replanner = True if replanner is not None else False
+        
+        replanning = False
+        exec_replannings = 0
+
+        while path_is_ready:
+            _, replanning = self.gym_world.run(use_replanner)
+
+            if replanning:
+                robot_dof, actors = self.gym_world.get_robot_dofs(), self.gym_world.get_actor_states()
+                res, _, waypoints, _ = self.scheduler.generate_path(robot_dof, actors, mode=replanner)
+
+                exec_replannings += 1
+                if res is False:
+                    break
+                
+                self.gym_world.update_objective(waypoints)
+                exec_net_forces = 0.0
+
+                replanning = False
 
             exec_net_forces += self.gym_world.get_net_forces()
 
-            if self.gym_world.is_goal_reached and self.scheduler.is_finished():
+            if self.gym_world.is_finished():
                 exec_run_result = True
                 break
 
@@ -326,8 +349,9 @@ class Experiment2:
                 rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
                 break
 
+
         exec_time = time.time() - exec_start_time
-        return exec_run_result, exec_time, exec_net_forces
+        return exec_run_result, exec_time, exec_net_forces, exec_replannings
 
     def show_snapshot_environment(self):
         _, axs = plt.subplots(1, 3)
@@ -557,7 +581,7 @@ class Experiment2:
 
 if __name__ == "__main__":
     benchmark = Experiment2.create_benchmark_experiment_2()
-    benchmark.show_snapshot_environment()
+    benchmark.run_experiment_2()
     benchmark.gym_world.destroy()
 
     rospy.signal_shutdown("Benchmark experiment 2 completed. Shutting down ROS.")

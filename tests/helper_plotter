@@ -532,8 +532,8 @@ class HelperPlotter:
 if __name__ == "__main__":
     plotter = HelperPlotter.create_helper_plotter()
     plotter.plot_passage_nodes()
-    # plotter.plot_example_rectangular_polygons()
-    # plotter.plot_example_convex_polygons()
-    # plotter.plot_example_non_convex_polygons()
+    plotter.plot_example_rectangular_polygons()
+    plotter.plot_example_convex_polygons()
+    plotter.plot_example_non_convex_polygons()
 
     rospy.signal_shutdown("Tasks completed. Shutting down ROS.")
