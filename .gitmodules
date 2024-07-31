@@ -5,6 +5,8 @@
 [submodule "src/control/mppi_isaac"]
 	path = src/control/mppi_isaac
 	url = git@github.com:JorisWeeda/mppi-isaac-namo.git
+	branch = feature/include-namo-functionalities
 [submodule "src/control/mppi_torch"]
 	path = src/control/mppi_torch
 	url = git@github.com:JorisWeeda/mppi-torch-namo.git
+	branch = feature/include-namo-functionalities
