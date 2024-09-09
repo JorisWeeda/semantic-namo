@@ -224,13 +224,13 @@ def calculate_avg_force_summary(data):
 
 
 if __name__ == "__main__":
-    experiment_1_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_1/experiment_1_2024-06-15.csv'
-    experiment_2_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_2/experiment_2_2024-06-15.csv'
+    setup_1_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/setup_1/setup_1_2024-06-15.csv'
+    setup_2_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/setup_2/setup_2_2024-06-15.csv'
 
-    # experiment_1_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_1/experiment_1_2024-07-30.csv'
-    # experiment_2_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/experiment_2/experiment_2_2024-07-30.csv'
+    # setup_1_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/setup_1/setup_1_2024-07-30.csv'
+    # setup_2_csv_file = '/home/joris/tu_delft_ws/15_msc_thesis/setup_2/setup_2_2024-07-30.csv'
 
-    data = load_and_merge_data(experiment_1_csv_file, experiment_2_csv_file)
+    data = load_and_merge_data(setup_1_csv_file, setup_2_csv_file)
 
     unique_planners = ['VG', 'RRT', 'SVG']
 

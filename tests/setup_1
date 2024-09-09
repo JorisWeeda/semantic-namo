@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from control.mppi_isaac.mppiisaac.planner.isaacgym_wrapper import ActorWrapper  # type: ignore
-from control.mppi_isaac.mppiisaac.utils.conversions import quaternion_to_yaw   # type: ignore
 
 import os
 import csv
@@ -23,22 +22,18 @@ from environment import SimulateWorld
 from scheduler import Scheduler
 
 
-class Experiment2:
+class Setup1:
 
-    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/experiment_2/'
-
+    DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/setup_1/'
+    
     MAX_EXEC_DURATION = 300
     ROOM_ITERATONS = 20
    
     DIMENSION_ROOM_X = 2.
-    DIMENSION_ROOM_Y = 4.
-
-    ADJUSTABLE_PERCENTAGE = 0.20
-    STATIONARY_PERCENTAGE = 0.01
+    DIMENSION_ROOM_Y = 6.
 
     USE_NVG = True
     USE_SVG = True
-    USE_PRM = False
     USE_RRT = True
 
     DISPLAY = False
@@ -57,8 +52,9 @@ class Experiment2:
         self.device = self.gym_world.device
 
     @classmethod
-    def create_benchmark_experiment_2(cls):
-        rospy.init_node('experiment_2_node')
+    def create_benchmark_setup_1(cls):
+        rospy.init_node('setup_1_node')
+
         hydra.initialize(config_path="../config", version_base=None)
 
         config = rospy.get_param('~config')
@@ -70,17 +66,17 @@ class Experiment2:
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
         os.makedirs(data_folder, exist_ok=True)
 
-        file_name = f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.csv"
+        file_name = f"setup_1_movability_{datetime.datetime.now().strftime('%Y-%m-%d')}.csv"
         file_path = os.path.join(data_folder, file_name)
 
         return cls(gym_world, scheduler, layout, config, file_path)
 
-    def run_experiment_2(self):
-        rospy.loginfo(f'Running experiment 2')
+    def run_setup_1(self):
+        rospy.loginfo(f'Running setup 1')
 
         for _ in range(self.ROOM_ITERATONS):
             configurations = {'ID': [],
-                            'experiment': [],
+                            'setup': [],
                             'room_area': [],
                             'planner': [],
                             'planner_result': [],
@@ -94,11 +90,28 @@ class Experiment2:
                             }
 
             self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
-        rospy.loginfo(f'Finished experiment 2')
+        rospy.loginfo(f'Finished setup 1')
 
     def apply_sequence(self, x, y, configurations):
         rospy.loginfo(f'Creating environment x:{x} y:{y}')
         additions, actors, room_area = self.initiate_world(x, y)
+        
+        n_mov_additions = copy.deepcopy(additions)
+        for addition in n_mov_additions:
+            addition["fixed"] = True
+            addition["mass"] = 1000
+
+        b_mov_additions = copy.deepcopy(additions)
+        for addition in b_mov_additions:
+            if addition["mass"] < self.scheduler.svg_planner.mass_threshold:
+                addition["fixed"] = False
+                addition["mass"] = 1
+            else:
+                addition["fixed"] = True
+                addition["mass"] = 1000
+
+        s_mov_additions = copy.deepcopy(additions)
+
         self.reset_robot()
 
         robot_dof = self.gym_world.get_robot_dofs()
@@ -117,7 +130,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(2)
+            configurations["setup"].append(1)
 
             configurations["planner"].append('nvg') 
             configurations["planner_result"].append(nvg_result)
@@ -127,69 +140,13 @@ class Experiment2:
             run_nvg_result, run_nvg_force, run_nvg_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing NVG path in environment.')
-                run_nvg_result, run_nvg_time, run_nvg_force, run_nvg_replans = self.run_trajectory(nvg_result, nvg_path, additions, 'nvg')
+                run_nvg_result, run_nvg_time, run_nvg_force, run_nvg_replans = self.run_trajectory(nvg_result, nvg_path, additions, n_mov_additions)
 
-            configurations["runner"].append('mppi') 
+            configurations["runner"].append('mppi-n') 
             configurations["runner_result"].append(run_nvg_result)
             configurations["runner_force"].append(run_nvg_force)
             configurations["runner_time"].append(run_nvg_time)
             configurations["runner_replans"].append(run_nvg_replans)
-
-        if rospy.is_shutdown():
-            return
-
-        svg_graph, svg_path = None, None
-        if self.USE_SVG:
-            rospy.loginfo(f'Running SVG global planner on environment.')
-            svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
-
-            configurations["ID"].append(f"{name}")
-            configurations["room_area"].append(room_area)
-            configurations["experiment"].append(2)
-
-            configurations["planner"].append('svg') 
-            configurations["planner_result"].append(svg_result)
-            configurations["planner_time"].append(svg_time)
-            configurations["planner_cost"].append(svg_cost)
-
-            run_svg_result, run_svg_force, run_svg_time = False, 0., 0.
-            if self.RUN_SIM:
-                rospy.loginfo(f'Executing SVG path in environment.')
-                run_svg_result, run_svg_time, run_svg_force, run_svg_replans = self.run_trajectory(svg_result, svg_path, additions, 'svg')
-
-            configurations["runner"].append('mppi') 
-            configurations["runner_result"].append(run_svg_result)
-            configurations["runner_force"].append(run_svg_force)
-            configurations["runner_time"].append(run_svg_time)
-            configurations["runner_replans"].append(run_svg_replans)
-
-        if rospy.is_shutdown():
-            return
-
-        prm_graph, prm_path = None, None
-        if self.USE_PRM:
-            rospy.loginfo(f'Running PRM global planner on environment.')
-            prm_result, prm_graph, prm_time, prm_path, prm_cost = self.run_path_planner(actors, 'prm')
-
-            configurations["ID"].append(f"{name}")
-            configurations["room_area"].append(room_area)
-            configurations["experiment"].append(2)
-
-            configurations["planner"].append('prm') 
-            configurations["planner_result"].append(prm_result)
-            configurations["planner_time"].append(prm_time)
-            configurations["planner_cost"].append(prm_cost)
-
-            run_prm_result, run_prm_force, run_prm_time = False, 0., 0.
-            if self.RUN_SIM:
-                rospy.loginfo(f'Executing PRM path in environment.')
-                run_prm_result, run_prm_time, run_prm_force, run_prm_replans = self.run_trajectory(prm_result, prm_path, additions, 'prm')
-
-            configurations["runner"].append('mppi') 
-            configurations["runner_result"].append(run_prm_result)
-            configurations["runner_force"].append(run_prm_force)
-            configurations["runner_time"].append(run_prm_time)
-            configurations["runner_replans"].append(run_prm_replans)
 
         if rospy.is_shutdown():
             return
@@ -201,7 +158,7 @@ class Experiment2:
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
-            configurations["experiment"].append(2)
+            configurations["setup"].append(1)
 
             configurations["planner"].append('rrt') 
             configurations["planner_result"].append(rrt_result)
@@ -211,9 +168,9 @@ class Experiment2:
             run_rrt_result, run_rrt_force, run_rrt_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing RRT path in environment.')
-                run_rrt_result, run_rrt_time, run_rrt_force, run_rrt_replans = self.run_trajectory(rrt_result, rrt_path, additions, 'rrt')
+                run_rrt_result, run_rrt_time, run_rrt_force, run_rrt_replans = self.run_trajectory(rrt_result, rrt_path, additions, b_mov_additions)
 
-            configurations["runner"].append('mppi') 
+            configurations["runner"].append('mppi-b') 
             configurations["runner_result"].append(run_rrt_result)
             configurations["runner_force"].append(run_rrt_force)
             configurations["runner_time"].append(run_rrt_time)
@@ -222,11 +179,40 @@ class Experiment2:
         if rospy.is_shutdown():
             return
 
+        svg_graph, svg_path = None, None
+        if self.USE_SVG:
+            rospy.loginfo(f'Running SVG global planner on environment.')
+            svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+
+            configurations["ID"].append(f"{name}")
+            configurations["room_area"].append(room_area)
+            configurations["setup"].append(1)
+
+            configurations["planner"].append('svg') 
+            configurations["planner_result"].append(svg_result)
+            configurations["planner_time"].append(svg_time)
+            configurations["planner_cost"].append(svg_cost)
+
+            run_svg_result, run_svg_force, run_svg_time = False, 0., 0.
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing SVG path in environment.')
+                run_svg_result, run_svg_time, run_svg_force, run_svg_replans = self.run_trajectory(svg_result, svg_path, additions, s_mov_additions, 'svg')
+
+            configurations["runner"].append('mppi-s') 
+            configurations["runner_result"].append(run_svg_result)
+            configurations["runner_force"].append(run_svg_force)
+            configurations["runner_time"].append(run_svg_time)
+            configurations["runner_replans"].append(run_svg_replans)
+
+        if rospy.is_shutdown():
+            return
+
         if self.SAVE_IMG:
             max_mass = self.gym_world.params['scheduler']['mass_threshold']
 
-            self.save_snapshot_paths(name, max_mass, (x, y), actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path)
-            self.save_snapshot_graph(name, max_mass, (x, y), actors, nvg_graph, svg_graph, prm_graph, rrt_graph)
+            self.save_snapshot_paths(name, max_mass, (x, y), actors, q_init, q_goal, nvg_path, svg_path, rrt_path)
+            self.save_snapshot_graph(name, max_mass, (x, y), actors, nvg_graph, svg_graph, rrt_graph)
+
             rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
 
         self.save_result(self.file_path, configurations)
@@ -240,9 +226,6 @@ class Experiment2:
         self.gym_world.update_objective(np.array([[x, y]]))
 
     def initiate_world(self, x, y):
-        self.gym_world.params['adjustable_percentage'] = self.ADJUSTABLE_PERCENTAGE
-        self.gym_world.params['stationary_percentage'] = self.STATIONARY_PERCENTAGE
-
         self.gym_world.params['range_x'] = [-x, x]
         self.gym_world.params['range_y'] = [-y, y]
 
@@ -258,43 +241,30 @@ class Experiment2:
         self.scheduler.rrt_planner.range_x = [-x, x]
         self.scheduler.rrt_planner.range_y = [-y, y]
 
-        self.scheduler.robot_goal_pos[0] = x - 0.5
-        self.scheduler.robot_goal_pos[1] = y - 0.5
-
         self.scheduler.robot_goal_pos[0] = 0.
-        self.scheduler.robot_goal_pos[1] = y - 1.
+        self.scheduler.robot_goal_pos[1] = y - 1.5
 
         self.gym_world.params["environment"]["robot"]["init_state"] = [0., - y + .5, 90]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
 
-        addition_range_y = [-y + 2, y - 2]
-        additions = self.gym_world.random_additions(range_y= addition_range_y)
-
+        additions = self.gym_world.grid_additions()
         actors = [ActorWrapper(**addition) for addition in additions]
 
         room_area = (2 * x) * (2 * y)
-        stationary_area = 0
-        adjustable_area = 0
 
         state_ten = torch.zeros(len(actors), 13)
-
         for i, actor in enumerate(actors):
             state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
-            state_ten[i, 3:7] = torch.tensor(
-                actor.init_ori, device=self.device)
+            state_ten[i, 3:7] = torch.tensor(actor.init_ori, device=self.device)
 
             actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
             actor.mass = actor.mass + actor_mass_noise
 
             additions[i]['mass'] = actor.mass
+ 
+            print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
 
-            if actor.mass >= self.scheduler.svg_planner.mass_threshold:
-                stationary_area += (actor.size[0] * actor.size[1])
-            else:
-                adjustable_area += (actor.size[0] * actor.size[1])
-
-            print(f'{i}: ', actor.name, actor.mass,
-                  actor.init_pos, actor.init_ori, actor.size)
+        self.reset_robot()
 
         return additions, (actors, state_ten), room_area
 
@@ -308,8 +278,8 @@ class Experiment2:
         exec_time = time.time() - start_time
         return result, graph, exec_time, path, cost
 
-    def run_trajectory(self, path_is_ready, waypoints, additions, replanner=None):
-        self.gym_world.configure(additions=additions, apply_mass_noise=False)
+    def run_trajectory(self, path_is_ready, waypoints, additions, controller_additions, replanner=None):
+        self.gym_world.configure(additions=additions, controller_additions=controller_additions, apply_mass_noise=False)
 
         exec_net_forces = 0.0
         exec_run_result = False
@@ -354,29 +324,37 @@ class Experiment2:
         return exec_run_result, exec_time, exec_net_forces, exec_replannings
 
     def show_snapshot_environment(self):
-        _, axs = plt.subplots(1, 3)
-        
+        max_mass = self.gym_world.params['scheduler']['mass_threshold']
+
+        _, actors, _ = self.initiate_world(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y)
+        n_actors = copy.deepcopy(actors)
+        for actor, state in zip(*n_actors):
+            actor.mass = 1000
+
+        b_actors = copy.deepcopy(actors) 
+        for actor, state in zip(*b_actors):
+            actor.mass = 1 if actor.mass < max_mass else 1000
+
+        s_actors = copy.deepcopy(actors) 
+
+        all_actors = [n_actors, b_actors, s_actors]
+
+        _, axs = plt.subplots(1, 3, figsize=(18, 6))
         for i, ax in enumerate(axs.flatten()):
-            self.gym_world.params['adjustable_percentage'] = self.ADJUSTABLE_PERCENTAGE
-            self.gym_world.params['stationary_percentage'] = self.STATIONARY_PERCENTAGE
-
-            _, actors, _ = self.initiate_world(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y)
+            actors = all_actors[i]
             self.reset_robot()
-
-            max_mass = self.gym_world.params['scheduler']['mass_threshold']
+                
             robot_dof = self.gym_world.get_robot_dofs()
 
             q_init = [robot_dof[0], robot_dof[2], 0]
             q_goal = self.scheduler.robot_goal_pos
 
             for actor, state in zip(*actors):
-                print(actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
-
                 mass = actor.mass
                 size = [dim - 1e-3 for dim in actor.size]
 
                 obs_pos = state[:2]
-                obs_rot = Experiment2.quaternion_to_yaw(state[3:7])
+                obs_rot = Setup1.quaternion_to_yaw(state[3:7])
 
                 corners = [
                     (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -391,24 +369,27 @@ class Experiment2:
                 patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
                 ax.add_patch(patch_polygon)
 
-            ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=70, zorder=2, label='Start')
-            ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=80, zorder=2, label='Goal')
+            ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=100, zorder=2, label='Start')
+            ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=120, zorder=2, label='Goal')
 
             ax.set_xlim(-self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_X)
             ax.set_ylim(-self.DIMENSION_ROOM_Y, self.DIMENSION_ROOM_Y)
 
-            ax.set_title(f'Example Room {i + 1}')
-            ax.set_xlabel('x-axis')
-            ax.set_ylabel('y axis')
+            ax.set_xlabel('x-axis', fontsize=14)
+            ax.set_ylabel('y-axis', fontsize=14)
             ax.set_aspect('equal')
-            ax.legend()
+            ax.legend(fontsize=12)
 
+        axs[0].set_title('No Movability', fontsize=16)
+        axs[1].set_title('Binary Movability', fontsize=16)
+        axs[2].set_title('Semantic Movability', fontsize=16)
+        
         sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
-        cbar = plt.colorbar(sm, ax=axs)
-        cbar.set_label('Mass')
+        cbar = plt.colorbar(sm, ax=axs, orientation='vertical')
+        cbar.set_label('Mass', fontsize=14)
 
         cbar.ax.axhline(y=max_mass, color='darkred', linestyle='-', linewidth=2)
-        cbar.ax.text(-1.1, max_mass, 'MAX', va='center', ha='left', color='darkred')
+        cbar.ax.text(-1.1, max_mass, 'MAX', va='center', ha='left', color='darkred', fontsize=12)
 
         plt.show()
 
@@ -428,7 +409,7 @@ class Experiment2:
                 writer.writerow(row)
 
     @staticmethod
-    def save_snapshot_paths(name, max_mass, limits, actors, q_init, q_goal, nvg_path, svg_path, prm_path, rrt_path):
+    def save_snapshot_paths(name, max_mass, limits, actors, q_init, q_goal, nvg_path, svg_path, rrt_path):
         fig, ax = plt.subplots(figsize=(20, 15))
 
         for actor, state in zip(*actors):
@@ -436,7 +417,7 @@ class Experiment2:
             size = [dim - 1e-3 for dim in actor.size]
 
             obs_pos = state[:2]
-            obs_rot = Experiment2.quaternion_to_yaw(state[3:7])
+            obs_rot = Setup1.quaternion_to_yaw(state[3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -471,11 +452,6 @@ class Experiment2:
             ax.plot(svg_path[:, 0], svg_path[:, 1], color='darkgreen',
                     marker='o', markersize=3, label='SVG Path')
 
-        if prm_path is not None:
-            prm_path = np.array(prm_path)
-            ax.plot(prm_path[:, 0], prm_path[:, 1], color='darkred',
-                    marker='o', markersize=3, label='PRM Path')
-
         if rrt_path is not None:
             rrt_path = np.array(rrt_path)
             ax.plot(rrt_path[:, 0], rrt_path[:, 1], color='darkblue',
@@ -487,7 +463,7 @@ class Experiment2:
         ax.set_aspect('equal')
         ax.legend()
 
-        folder = os.path.join(os.path.expanduser('~'), Experiment2.DATA_FOLDER, 'images')
+        folder = os.path.join(os.path.expanduser('~'), Setup1.DATA_FOLDER, 'images')
         os.makedirs(folder, exist_ok=True)
 
         image_file_path = os.path.join(folder, f'{name}_paths.png')
@@ -495,8 +471,8 @@ class Experiment2:
         plt.close(fig)
 
     @staticmethod
-    def save_snapshot_graph(name, max_mass, limits, actors, nvg_graph, svg_graph, prm_graph, rrt_graph):
-        amount_of_subplots = sum([Experiment2.USE_NVG, Experiment2.USE_SVG, Experiment2.USE_PRM, Experiment2.USE_RRT])
+    def save_snapshot_graph(name, max_mass, limits, actors, nvg_graph, svg_graph, rrt_graph):
+        amount_of_subplots = sum([Setup1.USE_NVG, Setup1.USE_SVG, Setup1.USE_RRT])
         fig, axs = plt.subplots(1, amount_of_subplots, figsize=(20, 15))
         i = 0
 
@@ -505,7 +481,7 @@ class Experiment2:
             size = [dim - 1e-3 for dim in actor.size]
 
             obs_pos = state[:2]
-            obs_rot = Experiment2.quaternion_to_yaw(state[3:7])
+            obs_rot = Setup1.quaternion_to_yaw(state[3:7])
 
             corners = [
                 (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
@@ -548,15 +524,6 @@ class Experiment2:
             axs[i].set_ylabel('Y Position')
             i += 1
 
-        if prm_graph is not None:
-            edges_prm = np.array([(prm_graph.nodes[u]['pos'], prm_graph.nodes[v]['posshow_snapshot_environment']) for u, v in prm_graph.edges])
-            for edge_prm in edges_prm:
-                axs[i].plot(edge_prm[:, 0], edge_prm[:, 1], color='tomato', linewidth=1.0)
-            axs[i].set_title('PRM Graph')
-            axs[i].set_xlabel('X Position')
-            axs[i].set_ylabel('Y Position')
-            i += 1
-
         if rrt_graph is not None:
             edges_rrt = np.array([(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v in rrt_graph.edges])
             for edge_rrt in edges_rrt:
@@ -566,13 +533,12 @@ class Experiment2:
             axs[i].set_ylabel('Y Position')
             i += 1
 
-        folder = os.path.join(os.path.expanduser('~'), Experiment2.DATA_FOLDER, 'images')
+        folder = os.path.join(os.path.expanduser('~'), Setup1.DATA_FOLDER, 'images')
         os.makedirs(folder, exist_ok=True)
 
         image_file_path = os.path.join(folder, f'{name}_graphs.png')
         fig.savefig(image_file_path)
         plt.close(fig)
-
 
     @staticmethod
     def quaternion_to_yaw(quaternion):
@@ -580,8 +546,8 @@ class Experiment2:
 
 
 if __name__ == "__main__":
-    benchmark = Experiment2.create_benchmark_experiment_2()
-    benchmark.run_experiment_2()
+    benchmark = Setup1.create_benchmark_setup_1()
+    benchmark.show_snapshot_environment()
     benchmark.gym_world.destroy()
 
-    rospy.signal_shutdown("Benchmark experiment 2 completed. Shutting down ROS.")
+    rospy.signal_shutdown("Benchmark setup 1 completed. Shutting down ROS.")

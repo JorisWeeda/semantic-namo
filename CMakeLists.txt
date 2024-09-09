@@ -164,10 +164,9 @@ catkin_install_python(PROGRAMS
   scripts/environment
   scripts/visualisation
   tests/helper_plotter
-  tests/experiment_0
-  tests/experiment_1
-  tests/experiment_2
-  tests/experiment_3
+  tests/setup_0
+  tests/setup_1
+  tests/setup_2
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 
