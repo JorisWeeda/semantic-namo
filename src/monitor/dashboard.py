@@ -90,9 +90,6 @@ class Dashboard:
         self.ax_2.clear()
 
         for actor, state in zip(*actors):
-            if actor.fixed:
-                continue
-
             size = actor.size
             obs_pos = state[:2]
             obs_rot = self.quaternion_to_yaw(state[3:7])
@@ -125,8 +122,7 @@ class Dashboard:
             self.ax_2.plot(shortest_path[:, 0], shortest_path[:, 1], 'g-o', linewidth=2)
 
         self.ax_2.set_title('Global path planning')
-        self.ax_2.set_xlim(*self.range_x)
-        self.ax_2.set_ylim(*self.range_y)        
+        self.ax_2.autoscale(enable=True)
         self.ax_2.set_aspect('equal')
 
         self.ax_2.set_xlabel('X Position')
@@ -134,7 +130,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(0.1)
+        plt.pause(0.001)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:
@@ -148,23 +144,19 @@ class Dashboard:
 
             for i in range(rollout_states.shape[0]):
                 x_values, y_values = rollout_states[i, :, 0], rollout_states[i, :, 2]
-                self.ax_3.plot(y_values, x_values, color=colors[i], alpha=0.4)
+                self.ax_3.plot(x_values, y_values, color=colors[i], alpha=0.4)
 
             x_values_best, y_values_best = best_states[0, :, 0], best_states[0, :, 2]
-            self.ax_3.plot(y_values_best, x_values_best, color='red', alpha=1.0)
+            self.ax_3.plot(x_values_best, y_values_best, color='red', alpha=1.0)
 
         self.ax_3.set_title('Robot DOF rollouts')
         self.ax_3.set_aspect('equal')
 
         self.ax_3.autoscale(enable=True)
 
-        self.ax_3.set_xlabel(r'$\longleftarrow$ Y Position')
-        self.ax_3.set_ylabel(r'X Position $\longrightarrow$')
-        self.ax_3.invert_xaxis()
-        
         self.fig_rollouts.canvas.draw()
         self.fig_rollouts.canvas.flush_events()
-        plt.pause(0.1)
+        plt.pause(0.001)
 
     def update_progress(self, dofs, goal):
         if self.fig_progress is None:

@@ -17,10 +17,10 @@ scheduler:
     spline_interval: .5 # meters
 
 controller:
-    pos_tolerance: 1.0  # meters
+    pos_tolerance: 0.5  # meters
     yaw_tolerance: 0.2  # radian
     vel_tolerance: 0.2  # m/s
-    replan_timing: 30.   # seconds
+    replan_timing: 15.   # seconds
 
 objects:
     wall:

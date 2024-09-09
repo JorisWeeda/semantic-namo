@@ -91,11 +91,11 @@ class SVG:
         for passage_identifier, nodes in passage_dict.items():
             if len(nodes) > 0:
                 entry_node = nodes[0]
-                graph = self.add_node_to_graph(graph, entry_node, polygons, knn=2)
+                graph = self.add_node_to_graph(graph, entry_node, polygons, knn=4)
 
             if len(nodes) > 1:
                 exit_node = nodes[1]
-                graph = self.add_node_to_graph(graph, exit_node, polygons, knn=2, connect_to_last=True)
+                graph = self.add_node_to_graph(graph, exit_node, polygons, knn=4, connect_to_last=True)
 
             if len(nodes) > 2:
                 entry_node_index = list(graph.nodes)[-2]
@@ -254,10 +254,10 @@ class SVG:
 
         corner_nodes = []
         for polygon in free_polygons:
-            for corner in polygon.exterior.coords:
+            for corner in polygon.exterior.coords[:-1]:
                 corner_nodes.append(corner)
             for interior in polygon.interiors:
-                for corner in interior.coords:
+                for corner in interior.coords[:-1]:
                     corner_nodes.append(corner)
 
         return np.array(corner_nodes)

@@ -8,7 +8,8 @@ import yaml
 
 
 from functools import partial
-from tf.transformations import euler_from_quaternion
+from scipy.spatial.transform import Rotation
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseStamped
 
 from isaacgym import gymapi
@@ -90,11 +91,25 @@ class Viewer:
 
                     additions.append(obstacle)
 
+            if self.params["environment"].get("demarcation", None):
+                for wall in self.params["environment"]["demarcation"]:
+                    obs_type = next(iter(wall))
+                    obs_args = self.params["objects"][obs_type]
+
+                    obstacle = {**obs_args, **wall[obs_type]}
+
+                    rot = Rotation.from_euler('xyz', obstacle["init_ori"], degrees=True).as_quat()
+                    obstacle["init_ori"] = list(rot)
+
+                    self.obstacle_states.append([*obstacle["init_pos"], *obstacle["init_ori"]])
+
+                    additions.append(obstacle)
+
         return additions
 
     def run(self):
         for idx, obstacle_state in enumerate(self.obstacle_states):
-            obs_state = torch.Tensor([*obstacle_state, 0., 0., 0., 0., 0., 0.], device=self.config["mppi"]["device"])
+            obs_state = torch.tensor([*obstacle_state, 0., 0., 0., 0., 0., 0.], device=self.config["mppi"]["device"])
             self.simulation.set_root_state_tensor_by_actor_idx(obs_state, idx + 1)
 
         self.simulation.reset_robot_state(self.robot_q, self.robot_q_dot)
@@ -128,8 +143,13 @@ class Viewer:
 
     def _cb_obstacle_state(self, idx, msg):
         pos, ori = msg.pose.position, msg.pose.orientation
-        self.obstacle_states[idx] = [pos.x, pos.y, pos.z, ori.x, ori.y, ori.z, ori.w]
+        _, _, obs_yaw = euler_from_quaternion([ori.x, ori.y, ori.z, ori.w])
+        self.obstacle_states[idx] = [pos.x, pos.y, 0., *self.yaw_to_quaternion(obs_yaw)]
 
+    @staticmethod
+    def yaw_to_quaternion(yaw):
+        return quaternion_from_euler(0., 0., yaw)
+    
     @staticmethod
     def set_viewer(gym, viewer, position, target):
         gym.viewer_camera_look_at(viewer, None, gymapi.Vec3(*position), gymapi.Vec3(*target))
