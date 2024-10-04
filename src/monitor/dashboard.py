@@ -130,7 +130,7 @@ class Dashboard:
 
         self.fig_planning.canvas.draw()
         self.fig_planning.canvas.flush_events()
-        plt.pause(0.001)
+        plt.pause(3)
 
     def update_rollouts(self, rollout_states, best_states):
         if self.fig_rollouts is None:

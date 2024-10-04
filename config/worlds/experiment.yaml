@@ -44,7 +44,7 @@ environment:
     obstacles:
         - box:
             name: "Box 1"
-            init_pos: [2.0, 3.5, 0.1]
+            init_pos: [2.0, 3.52, 0.1]
             init_ori: [0.0, 0.0, 0.0]
 
         - box:

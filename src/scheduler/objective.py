@@ -15,7 +15,7 @@ class Objective:
         self.alpha = .5
         self.dingo = 18     # number of bodies in Dingo
 
-        self.w_distance = 1e6
+        self.w_distance = 1e5
         self.w_progress = 1e6
 
         self.w_rotation = 1e4

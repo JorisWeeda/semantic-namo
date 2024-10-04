@@ -57,7 +57,7 @@ class Scheduler:
 
         return cls(robot_goal_pos, spline_interval, nvg_planner, svg_planner, prm_planner, rrt_planner)
 
-    def generate_path(self, robot_dof, actors, mode='svg'):
+    def generate_path(self, robot_dof, actors, mode='svg', edge_and_node_cost=True):
         q_init = [robot_dof[0], robot_dof[2]]
         q_goal = self.robot_goal_pos
 
@@ -87,9 +87,12 @@ class Scheduler:
             raise nx.exception.NetworkXError("Graph has negative weights, shortest path will fail.")
 
         try:
-            shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node,weight=lambda _, path_node, 
-                                             edge_data: self.custom_weight_function(path_node, edge_data, graph))
- 
+            if edge_and_node_cost:
+                shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node, weight=lambda _, path_node, 
+                                                 edge_data: self.edge_and_node_cost(path_node, edge_data, graph))
+            else:
+                shortest_path = nx.shortest_path(graph, source=init_node, target=goal_node)
+
         except nx.exception.NetworkXNoPath:
             rospy.loginfo(f"Failed to create shortest path using {mode}.")
             return False, graph, np.empty((0, 3), dtype='float'), float(0)
@@ -115,7 +118,13 @@ class Scheduler:
         tck, _ = splprep([x, y], s=0, k=k, per=False)
         u_new = np.linspace(0, 1, n)
 
-        interpolated_points = np.array(splev(u_new, tck))
+        try:
+            interpolated_points = np.array(splev(u_new, tck))
+        except ValueError as error:
+            print(f'u_new: {u_new}')
+            print(f'tck: {tck}')
+            raise error
+
         return interpolated_points.T
 
     @staticmethod
@@ -141,8 +150,7 @@ class Scheduler:
         return total_length
 
     @staticmethod
-    def custom_weight_function(path_node, edge_data, graph):
+    def edge_and_node_cost(path_node, edge_data, graph):
         node_cost = graph.nodes[path_node]['cost']
         edge_cost = edge_data['length']
         return edge_cost + node_cost
-

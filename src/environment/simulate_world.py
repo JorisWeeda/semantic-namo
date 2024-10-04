@@ -80,15 +80,17 @@ class SimulateWorld:
 
         return cls(params, config, simulation, controller, config["mppi"].device)
 
-    def configure(self, additions=None, apply_mass_noise=True):
+    def configure(self, additions=None, controller_additions=None, apply_mass_noise=True):
         if additions is None:
             if self.params["random"]:
                 additions = self.random_additions()
             else:
                 additions = self.create_additions()
 
+        controller_additions = controller_additions if controller_additions else additions
+
         self.simulation.add_to_envs(additions, apply_mass_noise)
-        self.controller.add_to_env(additions, apply_mass_noise)
+        self.controller.add_to_env(controller_additions, apply_mass_noise)
 
         init_state = self.params["environment"]["robot"]["init_state"]
         x, y, yaw = init_state[0], init_state[1], init_state[2] * (math.pi / 180.0)
@@ -320,10 +322,10 @@ class SimulateWorld:
         q_dot_rob = np.array([robot_dof[1], robot_dof[3], robot_dof[5]])
 
         action_array = action.cpu().numpy()
-        if np.all(np.abs(q_dot_rob) < 1e-1):
+        if np.all(np.abs(q_dot_rob[:2]) < 1e-1):
             rospy.logwarn_throttle(2, "Velocities are too close to zero, watchdog active")
-        elif np.all(np.abs(q_dot_rob - action_array) > 0.75 * np.abs(action_array)):
-            rospy.logwarn_throttle(2, "Desired velocity is more than 75% away, watchdog active")
+        #elif np.all(np.abs(q_dot_rob - action_array) > 0.75 * np.abs(action_array)):
+        #    rospy.logwarn_throttle(2, "Desired velocity is more than 75% away, watchdog active")
         elif np.all(np.abs(q_rob) < 1e-1) and np.any(np.abs(q_dot_rob) > 1e-1):
             rospy.logwarn_throttle(2, "Robot is slipping, watchdog active")
         else:

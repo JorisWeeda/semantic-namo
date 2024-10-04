@@ -4,9 +4,9 @@
     <arg name="config" default="config_dingo_push" />
     <arg name="layout" default="random" />
     
-    <arg name="do_experiment_0" default="False" />
-    <arg name="do_experiment_1" default="False" />
-    <arg name="do_experiment_2" default="False" />
+    <arg name="do_setup_0" default="False" />
+    <arg name="do_setup_1" default="False" />
+    <arg name="do_setup_2" default="False" />
     <arg name="do_experiment_3" default="False" />
 
     <arg name="use_helper_plotter" default="False" />
@@ -23,22 +23,22 @@
         </node>
     </group>
 
-    <group if="$(eval do_experiment_0)">
-        <node name="experiment_0" pkg="semantic_namo" type="experiment_0" output="screen" required="true" launch-prefix="$(arg venv)">
+    <group if="$(eval do_setup_0)">
+        <node name="setup_0" pkg="semantic_namo" type="setup_0" output="screen" required="true" launch-prefix="$(arg venv)">
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
         </node>
     </group>
 
-    <group if="$(eval do_experiment_1)">
-        <node name="experiment_1" pkg="semantic_namo" type="experiment_1" output="screen" required="true" launch-prefix="$(arg venv)">
+    <group if="$(eval do_setup_1)">
+        <node name="setup_1" pkg="semantic_namo" type="setup_1" output="screen" required="true" launch-prefix="$(arg venv)">
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
         </node>
     </group>
 
-    <group if="$(eval do_experiment_2)">
-        <node name="experiment_2" pkg="semantic_namo" type="experiment_2" output="screen" required="true" launch-prefix="$(arg venv)">
+    <group if="$(eval do_setup_2)">
+        <node name="setup_2" pkg="semantic_namo" type="setup_2" output="screen" required="true" launch-prefix="$(arg venv)">
             <param name="config" value="$(arg config)" />
             <param name="layout" value="$(arg layout)" />
         </node>

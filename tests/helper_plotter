@@ -16,6 +16,7 @@ from shapely.affinity import rotate
 from matplotlib.patches import Polygon
 from matplotlib import colors
 from matplotlib.cm import ScalarMappable
+import matplotlib.cm as cm
 
 from environment import SimulateWorld
 from scheduler import Scheduler
@@ -85,11 +86,13 @@ class HelperPlotter:
         axs[2].set_title('Stage 3')
         plt.show()
 
-    def plot_passage_nodes(self):
+    def plot_passage_nodes_example_1(self):
+        fig, axs = plt.subplots(2, 3, figsize=(18, 9))  # Changed to 2 rows, 3 columns and increased figsize for better readability
+
         hexagon_coords = [(np.cos(theta) - 1.5, np.sin(theta))
-                          for theta in np.linspace(0, 2*np.pi, 7)]
+                        for theta in np.linspace(0, 2*np.pi, 7)]
         squared_coords = [(x + 1., y) for (x, y)
-                          in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
+                        in [(-1, -1), (-1, 1), (1, 1), (1, -1), (-1, -1)]]
         
         hexagon = shapely.Polygon(hexagon_coords)
         squared = shapely.Polygon(squared_coords)
@@ -97,40 +100,52 @@ class HelperPlotter:
         hexagon = rotate(hexagon, np.pi / 4, use_radians=True, origin='centroid')
 
         shapes = {'obstacle 1': hexagon, 'obstacle 2': squared}
-        masses = {'obstacle 1': 10, 'obstacle 2': 5}
+        masses = {'obstacle 1': 10, 'obstacle 2': 10}
 
         cmap = plt.cm.viridis_r
         norm = colors.Normalize(
             vmin=0, vmax=self.scheduler.svg_planner.mass_threshold)
-        
-        fig, axs = plt.subplots(2, 3, figsize=(25, 5))
-        axs = axs.flatten()
 
-        fig.suptitle('Creating Passage Nodes Between Two Obstacles', fontsize=20)
 
+        # Increase overall title font size
+        fig.suptitle('Creating Passage Nodes Between Two Obstacles', fontsize=22)
+
+        # Define polygons with a thicker border for better visibility
         ax_hexagon = Polygon(hexagon.exterior.coords, color=cmap(
-            norm(10.)), label=f'Mass 1 ({10:.1f} KG)')
+            norm(masses["obstacle 1"])), alpha=0.8, edgecolor='black', lw=2, label=f'Mass 1 ({masses["obstacle 1"]:.1f} KG)')
         ax_squared = Polygon(squared.exterior.coords, color=cmap(
-            norm(5.)), label=f'Mass 2 ({5:.1f} KG)')
+            norm(masses["obstacle 2"])), alpha=0.8, edgecolor='black', lw=2, label=f'Mass 2 ({masses["obstacle 2"]:.1f} KG)')
 
-        for ax in axs:
-            ax.add_patch(copy.copy(ax_hexagon))
-            ax.add_patch(copy.copy(ax_squared))
+        for ax in range(3):
+            axs[0, ax].add_patch(copy.copy(ax_hexagon))
+            axs[0, ax].add_patch(copy.copy(ax_squared))
 
-        axs[0].set_title('Stage 1')
+        # Stage 2: Nearest points between polygons
+        num_points_hexagon = len(hexagon.exterior.coords)
+        num_points_squared = len(squared.exterior.coords)
+        num_points = num_points_hexagon + num_points_squared
+        line_colors = cm.get_cmap('coolwarm', num_points)
 
-        nearest_point_hexagon, nearest_point_squared = nearest_points(hexagon, squared)
-        shortest_line = LineString([nearest_point_hexagon, nearest_point_squared])
-        axs[1].plot(*shortest_line.xy, c='blue', label=f'Shortest Distance: {shortest_line.length:.3f} m')
-        axs[1].set_title('Stage 2')
+        nearest_points_square = []
+        nearest_points_hexagon = []
+
+        for idx, point in enumerate(hexagon.exterior.coords):
+            nearest_point = nearest_points(Point(point), squared)[1]
+            nearest_points_square.append((nearest_point.x, nearest_point.y))
+            axs[0, 0].plot([point[0], nearest_point.x], [point[1], nearest_point.y], color=line_colors(idx/num_points))
+
+        for idx, point in enumerate(squared.exterior.coords, start=num_points_hexagon):
+            nearest_point = nearest_points(Point(point), hexagon)[1]
+            nearest_points_hexagon.append((nearest_point.x, nearest_point.y))
+            axs[0, 0].plot([point[0], nearest_point.x], [point[1], nearest_point.y], color=line_colors(idx/num_points))
 
         points_list = self.scheduler.svg_planner.get_nearest_points_excluding_vertices(hexagon, squared)
-        convex_hull = MultiPoint(points_list).convex_hull
-
         points_list = np.array([[point.x, point.y] for point in points_list])
-        axs[2].scatter(points_list[:, 0], points_list[:, 1],s=20, c='red', label='Nearest Points')
-        axs[2].set_title('Stage 3')
+        axs[0, 0].scatter(points_list[:, 0], points_list[:, 1], s=80, c='red', edgecolor='black', label='Nearest Points', zorder=3)
+        axs[0, 0].set_title('Example 1, Stage I', fontsize=16, fontweight='bold')
 
+        # Stage 3: Plot entry/exit boundaries
+        convex_hull = MultiPoint(points_list).convex_hull
         convex_hull_coords = []
         if convex_hull.geom_type == 'Polygon':
             convex_hull_coords = list(convex_hull.exterior.coords)
@@ -154,29 +169,110 @@ class HelperPlotter:
             passages.append([boundary.centroid.x, boundary.centroid.y])
             boundaries.append(boundary)
 
-        x, y = boundaries[0].xy
-        axs[3].plot(x, y, c='green', label='Entry Boundary')
-        x, y = boundaries[1].xy
-        axs[3].plot(x, y, c='red', label='Exit Boundary')
-        axs[3].set_title('Stage 4')
+        for i, boundary in enumerate(boundaries[:2]):
+            x, y = boundary.xy
+            color = 'green' if i == 0 else 'red'
+            label = 'Entry Boundary' if i == 0 else 'Exit Boundary'
+            axs[0, 1].plot(x, y, c=color, lw=3, label=label)
 
-        axs[4].scatter(passages[0][0], passages[0][1],c='green', label='Entry Center')
-        axs[4].scatter(passages[1][0], passages[1][1],c='red', label='Exit Center')
-        axs[4].set_title('Stage 5')
+        axs[0, 1].set_title('Example 1, Stage II', fontsize=16, fontweight='bold')
 
+        # Stage 4: Passage nodes
         passage_nodes = self.scheduler.svg_planner.generate_passages(shapes, masses)
-        axs[5].scatter(passage_nodes[:, 0], passage_nodes[:, 1],c='blue', label='Passage Nodes')
-        axs[5].set_title('Stage 6')
+        axs[0, 2].scatter(passage_nodes[0, 0], passage_nodes[0, 1], c='blue', s=100, edgecolor='black', label='Passage Nodes', zorder=3)
+        axs[0, 2].scatter(passage_nodes[1, 0], passage_nodes[1, 1], c='blue', s=100, edgecolor='black', zorder=3)
+        axs[0, 2].set_title('Example 1, Stage III', fontsize=16, fontweight='bold')
 
-        for ax in axs:
-            ax.set_xlim(-3, 3)
-            ax.set_ylim(-3, 3)
-            ax.set_xlabel('X Axis')
-            ax.set_ylabel('Y Axis')
+        # Define a triangle and pentagon shape instead of hexagon and square
+        triangle_coords = [(np.cos(theta) - 1.0, np.sin(theta)) for theta in np.linspace(0, 2 * np.pi, 4)[:-1]]
+        pentagon_coords = [(np.cos(theta) + 1.0, np.sin(theta)) for theta in np.linspace(0, 2 * np.pi, 6)[:-1]]
+
+        triangle = shapely.Polygon(triangle_coords)
+        pentagon = shapely.Polygon(pentagon_coords)
+
+        # Optionally rotate one shape for variation
+        triangle = rotate(triangle, np.pi / 4, use_radians=True, origin='centroid')
+
+        # Define obstacle shapes and their masses
+        shapes = {'obstacle 1': triangle, 'obstacle 2': pentagon}
+        masses = {'obstacle 1': 20, 'obstacle 2': 5}
+
+        # Define colormap
+        cmap = plt.cm.viridis_r
+        norm = colors.Normalize(vmin=0, vmax=self.scheduler.svg_planner.mass_threshold)
+
+        # Define polygons with thicker borders and transparency for better visibility
+        ax_triangle = Polygon(triangle.exterior.coords, color=cmap(norm(masses["obstacle 1"])), alpha=0.8, edgecolor='black', lw=2, label=f'Mass 1 ({masses["obstacle 1"]:.1f} KG)')
+        ax_pentagon = Polygon(pentagon.exterior.coords, color=cmap(norm(masses["obstacle 2"])), alpha=0.8, edgecolor='black', lw=2, label=f'Mass 2 ({masses["obstacle 2"]:.1f} KG)')
+
+        for ax in range(3):
+            axs[1, ax].add_patch(copy.copy(ax_triangle))
+            axs[1, ax].add_patch(copy.copy(ax_pentagon))
+            
+        # Stage 2: Nearest points between polygons
+        num_points_hexagon = len(triangle.exterior.coords)
+        num_points_squared = len(pentagon.exterior.coords)
+        num_points = num_points_hexagon + num_points_squared
+        line_colors = cm.get_cmap('coolwarm', num_points)
+
+        nearest_points_square = []
+        nearest_points_hexagon = []
+
+        for idx, point in enumerate(triangle.exterior.coords):
+            nearest_point = nearest_points(Point(point), pentagon)[1]
+            nearest_points_square.append((nearest_point.x, nearest_point.y))
+            axs[1, 0].plot([point[0], nearest_point.x], [point[1], nearest_point.y], color=line_colors(idx/num_points))
+
+        for idx, point in enumerate(pentagon.exterior.coords, start=num_points_hexagon):
+            nearest_point = nearest_points(Point(point), triangle)[1]
+            nearest_points_hexagon.append((nearest_point.x, nearest_point.y))
+            axs[1, 0].plot([point[0], nearest_point.x], [point[1], nearest_point.y], color=line_colors(idx/num_points))
+
+        points_list = self.scheduler.svg_planner.get_nearest_points_excluding_vertices(triangle, pentagon)
+        points_list = np.array([[point.x, point.y] for point in points_list])
+        axs[1, 0].scatter(points_list[:, 0], points_list[:, 1], s=80, c='red', edgecolor='black', label='Nearest Points', zorder=3)
+        axs[1, 0].set_title('Example 2, Stage I', fontsize=16, fontweight='bold')
+
+        # Stage 3: Plot entry/exit boundaries
+        convex_hull = MultiPoint(points_list).convex_hull
+        convex_hull_coords = list(convex_hull.exterior.coords) if convex_hull.geom_type == 'Polygon' else list(convex_hull.coords)
+
+        passages, boundaries = [], []
+        for coord_idx in range(len(convex_hull_coords) - 1):
+            p1, p2 = Point(convex_hull_coords[coord_idx]), Point(convex_hull_coords[coord_idx + 1])
+            if self.scheduler.svg_planner.is_point_in_shape(p1, pentagon) and self.scheduler.svg_planner.is_point_in_shape(p2, pentagon):
+                continue
+            if self.scheduler.svg_planner.is_point_in_shape(p1, triangle) and self.scheduler.svg_planner.is_point_in_shape(p2, triangle):
+                continue
+            boundary = LineString([convex_hull_coords[coord_idx], convex_hull_coords[coord_idx + 1]])
+            passages.append([boundary.centroid.x, boundary.centroid.y])
+            boundaries.append(boundary)
+
+        for i, boundary in enumerate(boundaries[:2]):
+            x, y = boundary.xy
+            color = 'green' if i == 0 else 'red'
+            label = 'Entry Boundary' if i == 0 else 'Exit Boundary'
+            axs[1, 1].plot(x, y, c=color, lw=3, label=label)
+
+        axs[1, 1].set_title('Example 2, Stage II', fontsize=16, fontweight='bold')
+
+        # Stage 4: Passage nodes
+        passage_nodes = self.scheduler.svg_planner.generate_passages(shapes, masses)
+        axs[1, 2].scatter(passage_nodes[0, 0], passage_nodes[0, 1], c='blue', s=100, edgecolor='black', label='Passage Nodes', zorder=3)
+        axs[1, 2].scatter(passage_nodes[1, 0], passage_nodes[1, 1], c='blue', s=100, edgecolor='black', zorder=3)
+        axs[1, 2].set_title('Example 2, Stage III', fontsize=16, fontweight='bold')
+
+        # Adjust subplot settings
+        for ax in axs.flatten():
+            ax.set_xlim(-2.75, 2.5)
+            ax.set_ylim(-1.5, 3.0)
+            ax.set_xlabel('X Axis', fontsize=14)
+            ax.set_ylabel('Y Axis', fontsize=14)
             ax.set_aspect('equal')
-            ax.grid(True, alpha=0.1)
-            ax.legend()
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=14)
 
+        plt.tight_layout()
         plt.show()
 
     def plot_example_rectangular_polygons(self):
@@ -531,9 +627,9 @@ class HelperPlotter:
 
 if __name__ == "__main__":
     plotter = HelperPlotter.create_helper_plotter()
-    plotter.plot_passage_nodes()
-    plotter.plot_example_rectangular_polygons()
-    plotter.plot_example_convex_polygons()
-    plotter.plot_example_non_convex_polygons()
+    plotter.plot_passage_nodes_example_1()
+    #plotter.plot_example_rectangular_polygons()
+    #plotter.plot_example_convex_polygons()
+    #plotter.plot_example_non_convex_polygons()
 
     rospy.signal_shutdown("Tasks completed. Shutting down ROS.")

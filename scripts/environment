@@ -49,10 +49,10 @@ if __name__ == "__main__":
     while not rospy.is_shutdown():
         loop_start_time = time.perf_counter()
 
-        if (time.perf_counter() - start_time >= 2) and scheduler.waypoints is None:
+        if (time.perf_counter() - start_time >= 5) and scheduler.waypoints is None:
             robot_dof, actors = world.get_robot_dofs(), world.get_actor_states()
             res, graph, waypoints, _ = scheduler.generate_path(robot_dof, actors, mode='svg')
-            dashboard.update_planning(actors, waypoints, graph)
+            dashboard.update_planning(actors, waypoints, None)
 
             if waypoints is not None:
                 world.update_objective(waypoints)

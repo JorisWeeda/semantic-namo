@@ -13,14 +13,14 @@ camera:
 
 scheduler:
     mass_threshold: 30.  # kg
-    path_inflation: 0.3  # meters
+    path_inflation: 0.2 # meters
     spline_interval: .5 # meters
 
 controller:
-    pos_tolerance: 0.5  # meters
+    pos_tolerance: 0.3  # meters
     yaw_tolerance: 0.2  # radian
     vel_tolerance: 0.2  # m/s
-    replan_timing: 15.   # seconds
+    replan_timing: 10.   # seconds
 
 objects:
     wall:

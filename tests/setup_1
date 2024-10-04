@@ -25,21 +25,22 @@ from scheduler import Scheduler
 class Setup1:
 
     DATA_FOLDER = 'tu_delft_ws/15_msc_thesis/setup_1/'
-    
+
     MAX_EXEC_DURATION = 300
-    ROOM_ITERATONS = 20
-   
+    ROOM_ITERATONS = 50
+
     DIMENSION_ROOM_X = 2.
     DIMENSION_ROOM_Y = 6.
 
     USE_NVG = True
+    USE_BVG = True
     USE_SVG = True
     USE_RRT = True
 
     DISPLAY = False
 
     RUN_SIM = True
-    SAVE_IMG = True
+    SAVE_IMG = False
 
     def __init__(self, gym_world, scheduler, layout, config, file_path):
         self.gym_world = gym_world
@@ -60,7 +61,8 @@ class Setup1:
         config = rospy.get_param('~config')
         layout = rospy.get_param('~layout')
 
-        gym_world = SimulateWorld.create(hydra.compose(config), layout, cls.DISPLAY)
+        gym_world = SimulateWorld.create(
+            hydra.compose(config), layout, cls.DISPLAY)
         scheduler = Scheduler.create_scheduler(layout)
 
         data_folder = os.path.join(os.path.expanduser('~'), cls.DATA_FOLDER)
@@ -76,38 +78,37 @@ class Setup1:
 
         for _ in range(self.ROOM_ITERATONS):
             configurations = {'ID': [],
-                            'setup': [],
-                            'room_area': [],
-                            'planner': [],
-                            'planner_result': [],
-                            'planner_time': [],
-                            'planner_cost': [],
-                            'runner': [],
-                            'runner_result': [],
-                            'runner_force': [],
-                            'runner_time': [],
-                            'runner_replans': []
-                            }
+                              'setup': [],
+                              'room_area': [],
+                              'planner': [],
+                              'planner_result': [],
+                              'planner_time': [],
+                              'planner_cost': [],
+                              'runner': [],
+                              'runner_result': [],
+                              'runner_force': [],
+                              'runner_time': [],
+                              'runner_replans': []
+                              }
 
             self.apply_sequence(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y, configurations)
+            plt.close('all')
+
         rospy.loginfo(f'Finished setup 1')
 
     def apply_sequence(self, x, y, configurations):
         rospy.loginfo(f'Creating environment x:{x} y:{y}')
         additions, actors, room_area = self.initiate_world(x, y)
-        
+
         n_mov_additions = copy.deepcopy(additions)
         for addition in n_mov_additions:
-            addition["fixed"] = True
             addition["mass"] = 1000
 
         b_mov_additions = copy.deepcopy(additions)
         for addition in b_mov_additions:
             if addition["mass"] < self.scheduler.svg_planner.mass_threshold:
-                addition["fixed"] = False
                 addition["mass"] = 1
             else:
-                addition["fixed"] = True
                 addition["mass"] = 1000
 
         s_mov_additions = copy.deepcopy(additions)
@@ -123,16 +124,17 @@ class Setup1:
         if rospy.is_shutdown():
             return
 
-        nvg_graph, nvg_path = None, None
+        nvg_graph, nvg_path, run_nvg_trajectory, run_nvg_actors = None, None, None, None
         if self.USE_NVG:
             rospy.loginfo(f'Running NVG global planner on environment.')
-            nvg_result, nvg_graph, nvg_time, nvg_path, nvg_cost = self.run_path_planner(actors, 'nvg')
+            nvg_result, nvg_graph, nvg_time, nvg_path, nvg_cost = self.run_path_planner(
+                actors, 'nvg')
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
             configurations["setup"].append(1)
 
-            configurations["planner"].append('nvg') 
+            configurations["planner"].append('nvg')
             configurations["planner_result"].append(nvg_result)
             configurations["planner_time"].append(nvg_time)
             configurations["planner_cost"].append(nvg_cost)
@@ -140,9 +142,10 @@ class Setup1:
             run_nvg_result, run_nvg_force, run_nvg_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing NVG path in environment.')
-                run_nvg_result, run_nvg_time, run_nvg_force, run_nvg_replans = self.run_trajectory(nvg_result, nvg_path, additions, n_mov_additions)
+                run_nvg_result, run_nvg_time, run_nvg_force, run_nvg_replans, run_nvg_trajectory, run_nvg_actors = self.run_trajectory(
+                    nvg_result, nvg_path, additions, n_mov_additions)
 
-            configurations["runner"].append('mppi-n') 
+            configurations["runner"].append('n-mppi')
             configurations["runner_result"].append(run_nvg_result)
             configurations["runner_force"].append(run_nvg_force)
             configurations["runner_time"].append(run_nvg_time)
@@ -151,44 +154,47 @@ class Setup1:
         if rospy.is_shutdown():
             return
 
-        rrt_graph, rrt_path = None, None
-        if self.USE_RRT:
-            rospy.loginfo(f'Running RRT global planner on environment.')
-            rrt_result, rrt_graph, rrt_time, rrt_path, rrt_cost = self.run_path_planner(actors, 'rrt')
+        bvg_graph, bvg_path, run_bvg_trajectory, run_bvg_actors = None, None, None, None
+        if self.USE_BVG:
+            rospy.loginfo(f'Running BVG global planner on environment.')
+            bvg_result, bvg_graph, bvg_time, bvg_path, bvg_cost = self.run_path_planner(
+                actors, 'svg', edge_and_node_cost=False)
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
             configurations["setup"].append(1)
 
-            configurations["planner"].append('rrt') 
-            configurations["planner_result"].append(rrt_result)
-            configurations["planner_time"].append(rrt_time)
-            configurations["planner_cost"].append(rrt_cost)
+            configurations["planner"].append('bvg')
+            configurations["planner_result"].append(bvg_result)
+            configurations["planner_time"].append(bvg_time)
+            configurations["planner_cost"].append(bvg_cost)
 
-            run_rrt_result, run_rrt_force, run_rrt_time = False, 0., 0.
+            run_bvg_result, run_bvg_force, run_bvg_time = False, 0., 0.
             if self.RUN_SIM:
-                rospy.loginfo(f'Executing RRT path in environment.')
-                run_rrt_result, run_rrt_time, run_rrt_force, run_rrt_replans = self.run_trajectory(rrt_result, rrt_path, additions, b_mov_additions)
+                rospy.loginfo(f'Executing BVG path in environment.')
+                run_bvg_result, run_bvg_time, run_bvg_force, run_bvg_replans, run_bvg_trajectory, run_bvg_actors = self.run_trajectory(
+                    bvg_result, bvg_path, additions, s_mov_additions)
 
-            configurations["runner"].append('mppi-b') 
-            configurations["runner_result"].append(run_rrt_result)
-            configurations["runner_force"].append(run_rrt_force)
-            configurations["runner_time"].append(run_rrt_time)
-            configurations["runner_replans"].append(run_rrt_replans)
+            configurations["runner"].append('b-mppi')
+            configurations["runner_result"].append(run_bvg_result)
+            configurations["runner_force"].append(run_bvg_force)
+            configurations["runner_time"].append(run_bvg_time)
+            configurations["runner_replans"].append(run_bvg_replans)
 
         if rospy.is_shutdown():
             return
 
-        svg_graph, svg_path = None, None
+        svg_graph, svg_path, run_svg_trajectory, run_svg_actors = None, None, None, None
         if self.USE_SVG:
             rospy.loginfo(f'Running SVG global planner on environment.')
-            svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(actors, 'svg')
+            svg_result, svg_graph, svg_time, svg_path, svg_cost = self.run_path_planner(
+                actors, 'svg')
 
             configurations["ID"].append(f"{name}")
             configurations["room_area"].append(room_area)
             configurations["setup"].append(1)
 
-            configurations["planner"].append('svg') 
+            configurations["planner"].append('svg')
             configurations["planner_result"].append(svg_result)
             configurations["planner_time"].append(svg_time)
             configurations["planner_cost"].append(svg_cost)
@@ -196,9 +202,10 @@ class Setup1:
             run_svg_result, run_svg_force, run_svg_time = False, 0., 0.
             if self.RUN_SIM:
                 rospy.loginfo(f'Executing SVG path in environment.')
-                run_svg_result, run_svg_time, run_svg_force, run_svg_replans = self.run_trajectory(svg_result, svg_path, additions, s_mov_additions, 'svg')
+                run_svg_result, run_svg_time, run_svg_force, run_svg_replans, run_svg_trajectory, run_svg_actors = self.run_trajectory(
+                    svg_result, svg_path, additions, s_mov_additions, 'svg')
 
-            configurations["runner"].append('mppi-s') 
+            configurations["runner"].append('s-mppi')
             configurations["runner_result"].append(run_svg_result)
             configurations["runner_force"].append(run_svg_force)
             configurations["runner_time"].append(run_svg_time)
@@ -207,22 +214,60 @@ class Setup1:
         if rospy.is_shutdown():
             return
 
+        rrt_graph, rrt_path, run_rrt_trajectory, run_rrt_actors = None, None, None, None
+        if self.USE_RRT:
+            rospy.loginfo(f'Running RRT global planner on environment.')
+            rrt_result, rrt_graph, rrt_time, rrt_path, rrt_cost = self.run_path_planner(
+                actors, 'rrt')
+
+            configurations["ID"].append(f"{name}")
+            configurations["room_area"].append(room_area)
+            configurations["setup"].append(1)
+
+            configurations["planner"].append('rrt')
+            configurations["planner_result"].append(rrt_result)
+            configurations["planner_time"].append(rrt_time)
+            configurations["planner_cost"].append(rrt_cost)
+
+            run_rrt_result, run_rrt_force, run_rrt_time = False, 0., 0.
+            if self.RUN_SIM:
+                rospy.loginfo(f'Executing RRT path in environment.')
+                run_rrt_result, run_rrt_time, run_rrt_force, run_rrt_replans, run_rrt_trajectory, run_rrt_actors = self.run_trajectory(
+                    rrt_result, rrt_path, additions, b_mov_additions)
+
+            configurations["runner"].append('b-mppi')
+            configurations["runner_result"].append(run_rrt_result)
+            configurations["runner_force"].append(run_rrt_force)
+            configurations["runner_time"].append(run_rrt_time)
+            configurations["runner_replans"].append(run_rrt_replans)
+
+        if rospy.is_shutdown():
+            return
+
         if self.SAVE_IMG:
             max_mass = self.gym_world.params['scheduler']['mass_threshold']
 
-            self.save_snapshot_paths(name, max_mass, (x, y), actors, q_init, q_goal, nvg_path, svg_path, rrt_path)
-            self.save_snapshot_graph(name, max_mass, (x, y), actors, nvg_graph, svg_graph, rrt_graph)
+            self.save_snapshot_paths(
+                name, max_mass, (x, y), actors, q_init, q_goal, nvg_path, bvg_path, svg_path, rrt_path)
+            self.save_snapshot_trajectories(name, max_mass, (x, y), q_init, q_goal, run_nvg_trajectory, run_nvg_actors,
+                                            run_bvg_trajectory, run_bvg_actors, run_svg_trajectory, run_svg_actors, 
+                                            run_rrt_trajectory, run_rrt_actors)
+            self.save_snapshot_graph(
+                name, max_mass, (x, y), actors, nvg_graph, bvg_graph, svg_graph, rrt_graph)
 
-            rospy.loginfo(f'Saved snapshots of the environment and graphs under ID: {name}')
+            rospy.loginfo(
+                f'Saved snapshots of the environment and graphs under ID: {name}')
 
         self.save_result(self.file_path, configurations)
         rospy.loginfo(f'Saved information to: {self.file_path}')
 
     def reset_robot(self):
         robot_state = self.gym_world.params["environment"]["robot"]["init_state"]
-        x, y, yaw = robot_state[0], robot_state[1], robot_state[2] * (np.pi / 180.0)
+        x, y, yaw = robot_state[0], robot_state[1], robot_state[2] * \
+            (np.pi / 180.0)
 
-        self.gym_world.simulation.set_actor_dof_state(torch.tensor([x, 0., y, 0., yaw, 0.], device=self.device))
+        self.gym_world.simulation.set_actor_dof_state(
+            torch.tensor([x, 0., y, 0., yaw, 0.], device=self.device))
         self.gym_world.update_objective(np.array([[x, y]]))
 
     def initiate_world(self, x, y):
@@ -244,7 +289,8 @@ class Setup1:
         self.scheduler.robot_goal_pos[0] = 0.
         self.scheduler.robot_goal_pos[1] = y - 1.5
 
-        self.gym_world.params["environment"]["robot"]["init_state"] = [0., - y + .5, 90]
+        self.gym_world.params["environment"]["robot"]["init_state"] = [
+            0., - y + .5, 90]
         self.gym_world.params["goal"] = self.scheduler.robot_goal_pos
 
         additions = self.gym_world.grid_additions()
@@ -255,58 +301,67 @@ class Setup1:
         state_ten = torch.zeros(len(actors), 13)
         for i, actor in enumerate(actors):
             state_ten[i, :3] = torch.tensor(actor.init_pos, device=self.device)
-            state_ten[i, 3:7] = torch.tensor(actor.init_ori, device=self.device)
+            state_ten[i, 3:7] = torch.tensor(
+                actor.init_ori, device=self.device)
 
-            actor_mass_noise = np.random.uniform(-actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
+            actor_mass_noise = np.random.uniform(
+                -actor.noise_percentage_mass * actor.mass, actor.noise_percentage_mass * actor.mass)
             actor.mass = actor.mass + actor_mass_noise
 
             additions[i]['mass'] = actor.mass
- 
-            print(f'{i}: ', actor.name, actor.mass, actor.init_pos, actor.init_ori, actor.size)
+
+            print(f'{i}: ', actor.name, actor.mass,
+                  actor.init_pos, actor.init_ori, actor.size)
 
         self.reset_robot()
 
         return additions, (actors, state_ten), room_area
 
-    def run_path_planner(self, actors, planner_mode):
+    def run_path_planner(self, actors, planner_mode, edge_and_node_cost=True):
         self.reset_robot()
 
         start_time = time.time()
         result, graph, path, cost = self.scheduler.generate_path(
-            self.gym_world.get_robot_dofs(), actors, mode=planner_mode)
+            self.gym_world.get_robot_dofs(), actors, mode=planner_mode, edge_and_node_cost=edge_and_node_cost)
 
         exec_time = time.time() - start_time
         return result, graph, exec_time, path, cost
 
     def run_trajectory(self, path_is_ready, waypoints, additions, controller_additions, replanner=None):
-        self.gym_world.configure(additions=additions, controller_additions=controller_additions, apply_mass_noise=False)
+        """Run the trajectory based on the provided path and track the robot's x, y positions."""
+        self.gym_world.configure(
+            additions=additions, controller_additions=controller_additions, apply_mass_noise=False)
 
         exec_net_forces = 0.0
         exec_run_result = False
         exec_start_time = time.time()
 
+        exec_trajectory = []
+
         if path_is_ready:
             self.gym_world.update_objective(waypoints)
 
         use_replanner = True if replanner is not None else False
-        
         replanning = False
         exec_replannings = 0
 
         while path_is_ready:
             _, replanning = self.gym_world.run(use_replanner)
 
+            [x, _, y, _, _, _] = self.gym_world.get_robot_dofs()
+            exec_trajectory.append([x, y])
+
             if replanning:
                 robot_dof, actors = self.gym_world.get_robot_dofs(), self.gym_world.get_actor_states()
-                res, _, waypoints, _ = self.scheduler.generate_path(robot_dof, actors, mode=replanner)
+                res, _, waypoints, _ = self.scheduler.generate_path(
+                    robot_dof, actors, mode=replanner)
 
                 exec_replannings += 1
-                if res is False:
+                if not res:
                     break
-                
+
                 self.gym_world.update_objective(waypoints)
                 exec_net_forces = 0.0
-
                 replanning = False
 
             exec_net_forces += self.gym_world.get_net_forces()
@@ -316,26 +371,28 @@ class Setup1:
                 break
 
             if time.time() - exec_start_time > self.MAX_EXEC_DURATION:
-                rospy.logwarn(f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
+                rospy.logwarn(
+                    f"Could not finish the run within {self.MAX_EXEC_DURATION / 60} min")
                 break
 
-
+        exec_actors = self.gym_world.get_actor_states()
         exec_time = time.time() - exec_start_time
-        return exec_run_result, exec_time, exec_net_forces, exec_replannings
+        return exec_run_result, exec_time, exec_net_forces, exec_replannings, exec_trajectory, exec_actors
 
     def show_snapshot_environment(self):
         max_mass = self.gym_world.params['scheduler']['mass_threshold']
 
-        _, actors, _ = self.initiate_world(self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y)
+        _, actors, _ = self.initiate_world(
+            self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_Y)
         n_actors = copy.deepcopy(actors)
         for actor, state in zip(*n_actors):
             actor.mass = 1000
 
-        b_actors = copy.deepcopy(actors) 
+        b_actors = copy.deepcopy(actors)
         for actor, state in zip(*b_actors):
             actor.mass = 1 if actor.mass < max_mass else 1000
 
-        s_actors = copy.deepcopy(actors) 
+        s_actors = copy.deepcopy(actors)
 
         all_actors = [n_actors, b_actors, s_actors]
 
@@ -343,7 +400,7 @@ class Setup1:
         for i, ax in enumerate(axs.flatten()):
             actors = all_actors[i]
             self.reset_robot()
-                
+
             robot_dof = self.gym_world.get_robot_dofs()
 
             q_init = [robot_dof[0], robot_dof[2], 0]
@@ -364,13 +421,17 @@ class Setup1:
                 ]
 
                 polygon = shapely.Polygon(corners)
-                polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+                polygon = rotate(polygon, obs_rot,
+                                 origin=obs_pos, use_radians=True)
 
-                patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
+                patch_polygon = Polygon(
+                    polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
                 ax.add_patch(patch_polygon)
 
-            ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=100, zorder=2, label='Start')
-            ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=120, zorder=2, label='Goal')
+            ax.scatter(q_init[0], q_init[1], color='navy',
+                       marker='p', s=100, zorder=2, label='Start')
+            ax.scatter(q_goal[0], q_goal[1], color='crimson',
+                       marker='*', s=120, zorder=2, label='Goal')
 
             ax.set_xlim(-self.DIMENSION_ROOM_X, self.DIMENSION_ROOM_X)
             ax.set_ylim(-self.DIMENSION_ROOM_Y, self.DIMENSION_ROOM_Y)
@@ -383,13 +444,16 @@ class Setup1:
         axs[0].set_title('No Movability', fontsize=16)
         axs[1].set_title('Binary Movability', fontsize=16)
         axs[2].set_title('Semantic Movability', fontsize=16)
-        
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
+
+        sm = plt.cm.ScalarMappable(
+            cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
         cbar = plt.colorbar(sm, ax=axs, orientation='vertical')
         cbar.set_label('Mass', fontsize=14)
 
-        cbar.ax.axhline(y=max_mass, color='darkred', linestyle='-', linewidth=2)
-        cbar.ax.text(-1.1, max_mass, 'MAX', va='center', ha='left', color='darkred', fontsize=12)
+        cbar.ax.axhline(y=max_mass, color='darkred',
+                        linestyle='-', linewidth=2)
+        cbar.ax.text(-1.1, max_mass, 'MAX', va='center',
+                     ha='left', color='darkred', fontsize=12)
 
         plt.show()
 
@@ -409,70 +473,189 @@ class Setup1:
                 writer.writerow(row)
 
     @staticmethod
-    def save_snapshot_paths(name, max_mass, limits, actors, q_init, q_goal, nvg_path, svg_path, rrt_path):
-        fig, ax = plt.subplots(figsize=(20, 15))
-
-        for actor, state in zip(*actors):
-            mass = actor.mass
-            size = [dim - 1e-3 for dim in actor.size]
-
-            obs_pos = state[:2]
-            obs_rot = Setup1.quaternion_to_yaw(state[3:7])
-
-            corners = [
-                (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
-                (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
-                (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
-                (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
-            ]
-
-            polygon = shapely.Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
-
-            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
-            ax.add_patch(patch_polygon)
-
-        ax.scatter(q_init[0], q_init[1], color='navy', marker='p', s=70, zorder=2, label='Start')
-        ax.scatter(q_goal[0], q_goal[1], color='crimson', marker='*', s=80, zorder=2, label='Goal')
-
-        ax.set_xlim(-limits[0], limits[0])
-        ax.set_ylim(-limits[1], limits[1])
-
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
-        cbar = plt.colorbar(sm, ax=ax)
-        cbar.set_label('Mass')
-
-        if nvg_path is not None:
-            nvg_path = np.array(nvg_path)
-            ax.plot(nvg_path[:, 0], nvg_path[:, 1], color='darkorange',
-                    marker='o', markersize=3, label='NVG Path')
-
-        if svg_path is not None:
-            svg_path = np.array(svg_path)
-            ax.plot(svg_path[:, 0], svg_path[:, 1], color='darkgreen',
-                    marker='o', markersize=3, label='SVG Path')
-
-        if rrt_path is not None:
-            rrt_path = np.array(rrt_path)
-            ax.plot(rrt_path[:, 0], rrt_path[:, 1], color='darkblue',
-                    marker='o', markersize=3, label='RRT Path')
-
-        ax.set_title('Obstacles and Paths')
-        ax.set_xlabel('X Position')
-        ax.set_ylabel('Y Position')
-        ax.set_aspect('equal')
-        ax.legend()
-
-        folder = os.path.join(os.path.expanduser('~'), Setup1.DATA_FOLDER, 'images')
+    def save_snapshot_paths(name, max_mass, limits, actors, q_init, q_goal, nvg_path, bvg_path, svg_path, rrt_path):
+        """Save separate figures for each path type (N-VG, B-VG, S-VG, B-RRT)."""
+        folder = os.path.join(os.path.expanduser(
+            '~'), Setup1.DATA_FOLDER, 'images', f'{name}')
         os.makedirs(folder, exist_ok=True)
 
-        image_file_path = os.path.join(folder, f'{name}_paths.png')
-        fig.savefig(image_file_path)
-        plt.close(fig)
+        def plot_path(path, movability, color, label, file_suffix):
+            """Helper function to plot a specific path and save it as an image."""
+            fig, ax = plt.subplots(figsize=(20, 15))
+
+            for actor, state in zip(*actors):
+                if actor.type == 'robot':
+                    continue
+
+                mass = actor.mass
+                if movability == 'n':
+                    mass = 100
+                if movability == 'b':
+                    mass = 1 if mass < max_mass else 100
+
+                size = [dim - 1e-3 for dim in actor.size]
+
+                obs_pos = state[:2]
+                obs_rot = Setup1.quaternion_to_yaw(state[3:7])
+
+                corners = [
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+                ]
+
+                polygon = shapely.Polygon(corners)
+                polygon = rotate(polygon, obs_rot,
+                                 origin=obs_pos, use_radians=True)
+
+                patch_polygon = Polygon(
+                    polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
+                ax.add_patch(patch_polygon)
+
+            # Plot start and goal
+            ax.scatter(q_init[0], q_init[1], color='navy',
+                       marker='p', s=70, zorder=2, label='Start')
+            ax.scatter(q_goal[0], q_goal[1], color='crimson',
+                       marker='*', s=80, zorder=2, label='Goal')
+
+            # Set axis limits and labels
+            ax.set_xlim(-limits[0], limits[0])
+            ax.set_ylim(-limits[1], limits[1])
+            ax.set_title('Obstacles and Paths')
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
+            ax.set_aspect('equal')
+
+            # Plot the path
+            if path is not None:
+                path = np.array(path)
+                ax.plot(path[:, 0], path[:, 1], color=color,
+                        marker='o', markersize=3, label=label)
+
+            ax.legend()
+
+            # Add color bar for mass
+            sm = plt.cm.ScalarMappable(
+                cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
+            cbar = plt.colorbar(sm, ax=ax)
+            cbar.set_label('Mass')
+
+            # Save figure
+            image_file_path = os.path.join(folder, f'{name}_{file_suffix}.png')
+            fig.savefig(image_file_path)
+            plt.close(fig)
+
+        # Plot and save each path as a separate image
+        if nvg_path is not None:
+            plot_path(nvg_path, 'n', 'darkorange', 'N-VG Path', 'nvg')
+
+        if bvg_path is not None:
+            plot_path(bvg_path, 'b', 'deeppink', 'B-VG Path', 'bvg')
+
+        if svg_path is not None:
+            plot_path(svg_path, 's', 'darkgreen', 'S-VG Path', 'svg')
+
+        if rrt_path is not None:
+            plot_path(rrt_path, 'b', 'darkblue', 'B-RRT Path', 'rrt')
 
     @staticmethod
-    def save_snapshot_graph(name, max_mass, limits, actors, nvg_graph, svg_graph, rrt_graph):
-        amount_of_subplots = sum([Setup1.USE_NVG, Setup1.USE_SVG, Setup1.USE_RRT])
+    def save_snapshot_trajectories(name, max_mass, limits, q_init, q_goal, nvg_trajectory, nvg_actors, bvg_trajectory,
+                                   bvg_actors, svg_trajectory, svg_actors, rrt_trajectory, rrt_actors):
+        """Save separate figures for each trajectory type (N-VG, B-VG, S-VG, B-RRT)."""
+        folder = os.path.join(os.path.expanduser(
+            '~'), Setup1.DATA_FOLDER, 'images', f'{name}')
+        os.makedirs(folder, exist_ok=True)
+
+        def plot_trajectory(trajectory, actors, movability, color, label, file_suffix):
+            """Helper function to plot a specific trajectory and save it as an image."""
+            fig, ax = plt.subplots(figsize=(20, 15))
+
+            # Plot obstacles
+            for actor, state in zip(*actors):
+                if actor.type == 'robot':
+                    continue
+
+                mass = actor.mass
+                if movability == 'n':
+                    mass = 100
+                if movability == 'b':
+                    mass = 1 if mass < max_mass else 100
+                size = [dim - 1e-3 for dim in actor.size]
+
+                obs_pos = state[:2]
+                obs_rot = Setup1.quaternion_to_yaw(state[3:7])
+
+                corners = [
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] - size[1] / 2),
+                    (obs_pos[0] + size[0] / 2, obs_pos[1] + size[1] / 2),
+                    (obs_pos[0] - size[0] / 2, obs_pos[1] + size[1] / 2)
+                ]
+
+                polygon = shapely.Polygon(corners)
+                polygon = rotate(polygon, obs_rot,
+                                 origin=obs_pos, use_radians=True)
+
+                patch_polygon = Polygon(
+                    polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
+                ax.add_patch(patch_polygon)
+
+            # Plot start and goal
+            ax.scatter(q_init[0], q_init[1], color='navy',
+                       marker='p', s=70, zorder=2, label='Start')
+            ax.scatter(q_goal[0], q_goal[1], color='crimson',
+                       marker='*', s=80, zorder=2, label='Goal')
+
+            # Set axis limits and labels
+            ax.set_xlim(-limits[0], limits[0])
+            ax.set_ylim(-limits[1], limits[1])
+            ax.set_title('Obstacles and Trajectories')
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
+            ax.set_aspect('equal')
+
+            # Plot the trajectory
+            if trajectory:
+                trajectory = np.array(trajectory)
+                ax.plot(trajectory[:, 0], trajectory[:, 1],
+                        color=color, marker='o', markersize=3, label=label)
+
+            ax.legend()
+
+            # Add color bar for mass
+            sm = plt.cm.ScalarMappable(
+                cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
+            cbar = plt.colorbar(sm, ax=ax)
+            cbar.set_label('Mass')
+
+            # Save figure
+            image_file_path = os.path.join(
+                folder, f'{name}_{file_suffix}_trajectory.png')
+            fig.savefig(image_file_path)
+            plt.close(fig)
+
+        # Plot and save each trajectory as a separate image
+        if nvg_trajectory is not None:
+            plot_trajectory(nvg_trajectory, nvg_actors, 'n', 'darkorange',
+                            'N-VG Trajectory', 'nvg')
+
+        if bvg_trajectory is not None:
+            plot_trajectory(bvg_trajectory, bvg_actors, 'b', 'deeppink',
+                            'B-VG Trajectory', 'bvg')
+
+        if svg_trajectory is not None:
+            plot_trajectory(svg_trajectory, svg_actors, 's', 'darkgreen',
+                            'S-VG Trajectory', 'svg')
+
+        if rrt_trajectory is not None:
+            plot_trajectory(rrt_trajectory, rrt_actors, 'b', 'darkblue',
+                            'B-RRT Trajectory', 'rrt')
+
+    @staticmethod
+    def save_snapshot_graph(name, max_mass, limits, actors, nvg_graph, bvg_graph, svg_graph, rrt_graph):
+        amount_of_subplots = sum(
+            [Setup1.USE_NVG, Setup1.USE_BVG, Setup1.USE_SVG, Setup1.USE_RRT])
         fig, axs = plt.subplots(1, amount_of_subplots, figsize=(20, 15))
         i = 0
 
@@ -491,13 +674,16 @@ class Setup1:
             ]
 
             polygon = shapely.Polygon(corners)
-            polygon = rotate(polygon, obs_rot, origin=obs_pos, use_radians=True)
+            polygon = rotate(polygon, obs_rot,
+                             origin=obs_pos, use_radians=True)
 
-            patch_polygon = Polygon(polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
+            patch_polygon = Polygon(
+                polygon.exterior.coords, closed=True, color=plt.cm.viridis_r(mass / (2 * max_mass)))
             for ax in axs.flatten():
                 ax.add_patch(copy.deepcopy(patch_polygon))
 
-        sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=max_mass))
+        sm = plt.cm.ScalarMappable(
+            cmap=plt.cm.viridis_r, norm=plt.Normalize(vmin=0, vmax=2*max_mass))
         cbar = plt.colorbar(sm, ax=axs)
         cbar.set_label('Mass')
 
@@ -507,33 +693,51 @@ class Setup1:
             ax.set_aspect('equal')
 
         if nvg_graph is not None:
-            edges_nvg = np.array([(nvg_graph.nodes[u]['pos'], nvg_graph.nodes[v]['pos']) for u, v in nvg_graph.edges])
+            edges_nvg = np.array(
+                [(nvg_graph.nodes[u]['pos'], nvg_graph.nodes[v]['pos']) for u, v in nvg_graph.edges])
             for edge_nvg in edges_nvg:
-                axs[i].plot(edge_nvg[:, 0], edge_nvg[:, 1], color='orange', linewidth=1.0)
-            axs[i].set_title('NVG Graph')
+                axs[i].plot(edge_nvg[:, 0], edge_nvg[:, 1],
+                            color='orange', linewidth=1.0)
+            axs[i].set_title('N-VG Graph')
+            axs[i].set_xlabel('X Position')
+            axs[i].set_ylabel('Y Position')
+            i += 1
+
+        if bvg_graph is not None:
+            edges_svg = np.array(
+                [(bvg_graph.nodes[u]['pos'], bvg_graph.nodes[v]['pos']) for u, v in bvg_graph.edges])
+            for edge_svg in edges_svg:
+                axs[i].plot(edge_svg[:, 0], edge_svg[:, 1],
+                            color='deeppink', linewidth=1.0)
+            axs[i].set_title('B-VG Graph')
             axs[i].set_xlabel('X Position')
             axs[i].set_ylabel('Y Position')
             i += 1
 
         if svg_graph is not None:
-            edges_svg = np.array([(svg_graph.nodes[u]['pos'], svg_graph.nodes[v]['pos']) for u, v in svg_graph.edges])
+            edges_svg = np.array(
+                [(svg_graph.nodes[u]['pos'], svg_graph.nodes[v]['pos']) for u, v in svg_graph.edges])
             for edge_svg in edges_svg:
-                axs[i].plot(edge_svg[:, 0], edge_svg[:, 1], color='forestgreen', linewidth=1.0)
-            axs[i].set_title('SVG Graph')
+                axs[i].plot(edge_svg[:, 0], edge_svg[:, 1],
+                            color='forestgreen', linewidth=1.0)
+            axs[i].set_title('S-VG Graph')
             axs[i].set_xlabel('X Position')
             axs[i].set_ylabel('Y Position')
             i += 1
 
         if rrt_graph is not None:
-            edges_rrt = np.array([(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v in rrt_graph.edges])
+            edges_rrt = np.array(
+                [(rrt_graph.nodes[u]['pos'], rrt_graph.nodes[v]['pos']) for u, v in rrt_graph.edges])
             for edge_rrt in edges_rrt:
-                axs[i].plot(edge_rrt[:, 0], edge_rrt[:, 1], color='lightblue', linewidth=1.0)
-            axs[i].set_title('RRT Graph')
+                axs[i].plot(edge_rrt[:, 0], edge_rrt[:, 1],
+                            color='lightblue', linewidth=1.0)
+            axs[i].set_title('B-RRT Graph')
             axs[i].set_xlabel('X Position')
             axs[i].set_ylabel('Y Position')
             i += 1
 
-        folder = os.path.join(os.path.expanduser('~'), Setup1.DATA_FOLDER, 'images')
+        folder = os.path.join(os.path.expanduser(
+            '~'), Setup1.DATA_FOLDER, 'images', f'{name}')
         os.makedirs(folder, exist_ok=True)
 
         image_file_path = os.path.join(folder, f'{name}_graphs.png')
@@ -547,7 +751,7 @@ class Setup1:
 
 if __name__ == "__main__":
     benchmark = Setup1.create_benchmark_setup_1()
-    benchmark.show_snapshot_environment()
+    benchmark.run_setup_1()
     benchmark.gym_world.destroy()
 
     rospy.signal_shutdown("Benchmark setup 1 completed. Shutting down ROS.")
